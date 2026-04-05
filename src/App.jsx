@@ -628,7 +628,7 @@ export default function App() {
             try {
                 // Determine model
                 const hasImage = chatHistory.some(msg => Array.isArray(msg.content) && msg.content.some(part => part.type === 'image_url'));
-                const model = hasImage ? "meta-llama/llama-4-scout-17b-16e-instruct" : "llama-3.3-70b-versatile";
+                const model = hasImage ? "llama-3.2-90b-vision-preview" : "llama-3.3-70b-versatile";
 
                 // Format messages
                 const messages = [];
@@ -816,7 +816,8 @@ export default function App() {
         try {
             setCurrentStep(capturedFiles.length > 0 ? `Processing ${capturedFiles.length} files...` : 'Initializing reasoning...');
             
-            const apiHistory = newMessages.map((m) => {
+            const apiHistory = newMessages.map((m, idx) => {
+                const isLast = idx === newMessages.length - 1;
                 if (m.role !== 'user') {
                     return { role: m.role, content: typeof m.content === 'object' ? JSON.stringify(m.content) : m.content.toString() };
                 }
@@ -827,7 +828,11 @@ export default function App() {
                 if (m.attachments && m.attachments.length > 0) {
                     m.attachments.forEach(att => {
                         if (att.type === 'image') {
-                            parts.push({ type: 'image_url', image_url: { url: `data:${att.mimeType};base64,${att.base64}` } });
+                            if (isLast) {
+                                parts.push({ type: 'image_url', image_url: { url: `data:${att.mimeType};base64,${att.base64}` } });
+                            } else {
+                                textBonus += `\n[Context: Image "${att.name}" was provided here]`;
+                            }
                         } else {
                             textBonus += `\n[ATTACHED DOCUMENT: ${att.name}]\n---CONTENT START---\n${att.content}\n---CONTENT END---\n`;
                         }
