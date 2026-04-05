@@ -817,7 +817,9 @@ export default function App() {
             setCurrentStep(capturedFiles.length > 0 ? `Processing ${capturedFiles.length} files...` : 'Initializing reasoning...');
             
             const apiHistory = newMessages.map((m) => {
-                if (m.role !== 'user') return m;
+                if (m.role !== 'user') {
+                    return { role: m.role, content: typeof m.content === 'object' ? JSON.stringify(m.content) : m.content.toString() };
+                }
                 
                 let parts = [];
                 let textBonus = "";
