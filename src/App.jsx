@@ -1380,10 +1380,9 @@ CRITICAL FORMATTING INSTRUCTIONS for MATH & SCIENCE:
                                     </div>
                                 )}
 
-                                {/* Floating Input Dock */}
+                                 {/* Floating Input Dock */}
                                 <div className="mobile-dock" style={{ padding: '0 24px 48px', display: 'flex', flexDirection: 'column', alignItems: 'center', width: '100%', boxSizing: 'border-box' }}>
                                     <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', width: '100%', maxWidth: '860px' }}>
-
 
                                         {uploadedFiles.length > 0 && (
                                             <div style={{ display: 'flex', gap: '12px', padding: '10px', overflowX: 'auto', width: '100%', maxWidth: '860px', scrollbarWidth: 'none' }}>
@@ -1404,24 +1403,6 @@ CRITICAL FORMATTING INSTRUCTIONS for MATH & SCIENCE:
                                                 ))}
                                             </div>
                                         )}
-
-                                        {/* Floating Model Switcher (High Visibility) */}
-                                        <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '8px' }}>
-                                            <div style={{ display: 'flex', background: 'rgba(0,0,0,0.6)', border: '1px solid rgba(255,255,255,0.15)', padding: '4px', borderRadius: '24px', backdropFilter: 'blur(30px)', boxShadow: '0 8px 32px rgba(0,0,0,0.4)', width: 'fit-content' }}>
-                                                <button 
-                                                    onClick={() => { setPreferredModel('gemini'); localStorage.setItem('zaars_model', 'gemini'); }}
-                                                    style={{ padding: '8px 24px', border: 'none', borderRadius: '20px', fontSize: '11px', fontWeight: 700, cursor: 'pointer', background: preferredModel === 'gemini' ? 'linear-gradient(45deg, #fc42ff, #2196f3)' : 'transparent', color: '#fff', transition: 'all 0.3s cubic-bezier(0.16, 1, 0.3, 1)', transform: preferredModel === 'gemini' ? 'scale(1.05)' : 'scale(1)', letterSpacing: '2px', textTransform: 'uppercase' }}
-                                                >
-                                                    GEMINI 1.5 PRO
-                                                </button>
-                                                <button 
-                                                    onClick={() => { setPreferredModel('llama'); localStorage.setItem('zaars_model', 'llama'); }}
-                                                    style={{ padding: '8px 24px', border: 'none', borderRadius: '20px', fontSize: '11px', fontWeight: 700, cursor: 'pointer', background: preferredModel === 'llama' ? 'rgba(255,255,255,0.15)' : 'transparent', color: preferredModel === 'llama' ? '#fff' : 'rgba(255,255,255,0.4)', transition: 'all 0.3s cubic-bezier(0.16, 1, 0.3, 1)', transform: preferredModel === 'llama' ? 'scale(1.05)' : 'scale(1)', letterSpacing: '2px', textTransform: 'uppercase' }}
-                                                >
-                                                    LLAMA 3.3
-                                                </button>
-                                            </div>
-                                        </div>
 
                                         <div className="mobile-input-container" style={{ display: 'flex', gap: '12px', alignItems: 'center', background: 'rgba(0, 0, 0, 0.4)', backdropFilter: 'blur(40px) saturate(1.5)', WebkitBackdropFilter: 'blur(40px) saturate(1.5)', border: '1px solid rgba(255, 255, 255, 0.12)', boxShadow: '0 24px 48px rgba(0, 0, 0, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.1)', borderRadius: '32px', padding: '10px 14px', width: '100%', boxSizing: 'border-box' }}>
 
