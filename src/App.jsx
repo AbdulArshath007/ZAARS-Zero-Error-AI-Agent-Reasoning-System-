@@ -622,13 +622,13 @@ export default function App() {
     const callGroqAPI = async (chatHistory, systemInstruction = "", useJson = false) => {
         let retries = 5, delay = 1000;
         const userProvidedKey = userProfile.apiKey || "";
-        const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:5000';
+        const apiUrl = import.meta.env.VITE_API_URL || (window.location.hostname === 'localhost' ? 'http://localhost:5000' : window.location.origin);
 
         while (retries > 0) {
             try {
                 // Determine model
                 const hasImage = chatHistory.some(msg => Array.isArray(msg.content) && msg.content.some(part => part.type === 'image_url'));
-                const model = hasImage ? "llama-3.2-90b-vision-preview" : "llama-3.3-70b-versatile";
+                const model = hasImage ? "llama-3.2-11b-vision-preview" : "llama-3.3-70b-versatile";
 
                 // Format messages
                 const messages = [];
