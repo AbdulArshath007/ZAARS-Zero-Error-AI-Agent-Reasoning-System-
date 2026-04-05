@@ -404,9 +404,9 @@ export default function App() {
         }
         setIsAuthLoading(true); setAuthError('');
         try {
-            const endpoint = isRegistering ? '/auth/register' : '/auth/login';
-            const apiUrl = import.meta.env.VITE_API_URL || (window.location.hostname === 'localhost' ? 'http://localhost:5000' : window.location.origin);
-            const res = await fetch(`${apiUrl}${endpoint}`, {
+            const apiBase = (window.location.hostname === 'localhost' ? 'http://localhost:5000' : window.location.origin);
+            const endpoint = isRegistering ? '/api/auth/register' : '/api/auth/login';
+            const res = await fetch(`${apiBase}${endpoint}`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ username: authData.username, password: authData.password })
@@ -440,14 +440,20 @@ export default function App() {
         setShowGoogleModal(false);
         setIsAuthLoading(true); setAuthError('');
         try {
-            const apiUrl = import.meta.env.VITE_API_URL || (window.location.hostname === 'localhost' ? 'http://localhost:5000' : window.location.origin);
-            const res = await fetch(`${apiUrl}/auth/google`, {
+            const apiBase = (window.location.hostname === 'localhost' ? 'http://localhost:5000' : window.location.origin);
+            const res = await fetch(`${apiBase}/api/auth/google`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ credential: credentialResponse.credential })
             });
+
+            if (!res.ok) {
+                const text = await res.text();
+                const snippet = text.slice(0, 100).replace(/<[^>]*>?/gm, ''); 
+                throw new Error(`Google Access ${res.status}: ${snippet || 'Service Restricted'}`);
+            }
+
             const data = await res.json();
-            if (!res.ok) throw new Error(data.error || 'Google Auth failed');
             
             const newProfile = { ...userProfile, name: data.user.name, originalUsername: data.user.originalUsername, email: data.user.email || '', isGoogle: true, token: data.token, avatar: data.user.avatar, apiKey: data.user.apiKey || '' };
             setUserProfile(newProfile);
@@ -473,8 +479,8 @@ export default function App() {
 
     const syncHistory = async (token) => {
         try {
-            const apiUrl = import.meta.env.VITE_API_URL || (window.location.hostname === 'localhost' ? 'http://localhost:5000' : window.location.origin);
-            const res = await fetch(`${apiUrl}/user/sessions`, {
+            const apiBase = (window.location.hostname === 'localhost' ? 'http://localhost:5000' : window.location.origin);
+            const res = await fetch(`${apiBase}/api/user/sessions`, {
                 headers: { 'Authorization': `Bearer ${token}` }
             });
             const data = await res.json();
@@ -486,8 +492,8 @@ export default function App() {
         const token = userProfile.token;
         if (!token || isPrivateMode) return;
         try {
-            const apiUrl = import.meta.env.VITE_API_URL || (window.location.hostname === 'localhost' ? 'http://localhost:5000' : window.location.origin);
-            const res = await fetch(`${apiUrl}/user/sessions`, {
+            const apiBase = (window.location.hostname === 'localhost' ? 'http://localhost:5000' : window.location.origin);
+            const res = await fetch(`${apiBase}/api/user/sessions`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
                 body: JSON.stringify(sessionData)
@@ -505,14 +511,14 @@ export default function App() {
         const token = userProfile.token;
         if (!token) return;
         try {
-            const apiUrl = import.meta.env.VITE_API_URL || (window.location.hostname === 'localhost' ? 'http://localhost:5000' : window.location.origin);
-            const res = await fetch(`${apiUrl}/user/sessions/${id}`, {
+            const apiBase = (window.location.hostname === 'localhost' ? 'http://localhost:5000' : window.location.origin);
+            const res = await fetch(`${apiBase}/api/user/sessions/${id}`, {
                 method: 'DELETE',
                 headers: { 'Authorization': `Bearer ${token}` }
             });
             if (res.ok) {
                 setHistory(prev => prev.filter(h => h.id !== id));
-                if (activeSessionId === id || activeSessionId == id) {
+                if (activeSessionId === id) {
                     setMessages([]);
                     setActiveSessionId(null);
                     setInsights(null);
