@@ -1,8 +1,14 @@
 {
   "version": 2,
+  "functions": {
+    "server.js": {
+      "memory": 1024,
+      "maxDuration": 30
+    }
+  },
   "rewrites": [
-    { "source": "/auth/(.*)", "destination": "server.js" },
-    { "source": "/user/(.*)", "destination": "server.js" },
-    { "source": "/api/(.*)", "destination": "server.js" }
+    { "source": "/api/(.*)", "destination": "/server.js" },
+    { "source": "/auth/(.*)", "destination": "/server.js" },
+    { "source": "/user/(.*)", "destination": "/server.js" }
   ]
 }
