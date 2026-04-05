@@ -404,7 +404,7 @@ export default function App() {
         setIsAuthLoading(true); setAuthError('');
         try {
             const endpoint = isRegistering ? '/auth/register' : '/auth/login';
-            const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:5000';
+            const apiUrl = import.meta.env.VITE_API_URL || (window.location.hostname === 'localhost' ? 'http://localhost:5000' : window.location.origin);
             const res = await fetch(`${apiUrl}${endpoint}`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -429,7 +429,7 @@ export default function App() {
         setShowGoogleModal(false);
         setIsAuthLoading(true); setAuthError('');
         try {
-            const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:5000';
+            const apiUrl = import.meta.env.VITE_API_URL || (window.location.hostname === 'localhost' ? 'http://localhost:5000' : window.location.origin);
             const res = await fetch(`${apiUrl}/auth/google`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -462,7 +462,8 @@ export default function App() {
 
     const syncHistory = async (token) => {
         try {
-            const res = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:5000'}/user/sessions`, {
+            const apiUrl = import.meta.env.VITE_API_URL || (window.location.hostname === 'localhost' ? 'http://localhost:5000' : window.location.origin);
+            const res = await fetch(`${apiUrl}/user/sessions`, {
                 headers: { 'Authorization': `Bearer ${token}` }
             });
             const data = await res.json();
@@ -474,7 +475,8 @@ export default function App() {
         const token = userProfile.token;
         if (!token || isPrivateMode) return;
         try {
-            const res = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:5000'}/user/sessions`, {
+            const apiUrl = import.meta.env.VITE_API_URL || (window.location.hostname === 'localhost' ? 'http://localhost:5000' : window.location.origin);
+            const res = await fetch(`${apiUrl}/user/sessions`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
                 body: JSON.stringify(sessionData)
@@ -492,7 +494,8 @@ export default function App() {
         const token = userProfile.token;
         if (!token) return;
         try {
-            const res = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:5000'}/user/sessions/${id}`, {
+            const apiUrl = import.meta.env.VITE_API_URL || (window.location.hostname === 'localhost' ? 'http://localhost:5000' : window.location.origin);
+            const res = await fetch(`${apiUrl}/user/sessions/${id}`, {
                 method: 'DELETE',
                 headers: { 'Authorization': `Bearer ${token}` }
             });
@@ -510,7 +513,8 @@ export default function App() {
     const handleProfileSave = async (newName) => {
         const updatedProfile = { ...userProfile, name: newName };
         try {
-            await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:5000'}/user/update`, {
+            const apiUrl = import.meta.env.VITE_API_URL || (window.location.hostname === 'localhost' ? 'http://localhost:5000' : window.location.origin);
+            await fetch(`${apiUrl}/user/update`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${userProfile.token}` },
                 body: JSON.stringify({ avatar_url: userProfile.avatar, api_key: userProfile.apiKey })
@@ -533,7 +537,8 @@ export default function App() {
     const handleCropSave = async (base64Image) => {
         const updatedProfile = { ...userProfile, avatar: base64Image };
         try {
-            await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:5000'}/user/update`, {
+            const apiUrl = import.meta.env.VITE_API_URL || (window.location.hostname === 'localhost' ? 'http://localhost:5000' : window.location.origin);
+            await fetch(`${apiUrl}/user/update`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${userProfile.token}` },
                 body: JSON.stringify({ avatar_url: base64Image })
@@ -547,7 +552,8 @@ export default function App() {
     const handleRemoveProfilePic = async () => {
         const updatedProfile = { ...userProfile, avatar: null };
         try {
-            await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:5000'}/user/update`, {
+            const apiUrl = import.meta.env.VITE_API_URL || (window.location.hostname === 'localhost' ? 'http://localhost:5000' : window.location.origin);
+            await fetch(`${apiUrl}/user/update`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${userProfile.token}` },
                 body: JSON.stringify({ avatar_url: null })
