@@ -169,7 +169,8 @@ function MagicRings({ color = '#fc42ff', colorTwo = '#42fcff', speed = 1, ringCo
         const quad = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), material);
         scene.add(quad);
         const resize = () => {
-            const w = mount.clientWidth, h = mount.clientHeight, dpr = Math.min(window.devicePixelRatio, 2);
+            const w = mount.clientWidth, h = mount.clientHeight;
+            const dpr = Math.min(window.devicePixelRatio, 1.5); // Cap DPR at 1.5 to reduce GPU lag
             renderer.setSize(w, h); renderer.setPixelRatio(dpr); uniforms.uResolution.value.set(w * dpr, h * dpr);
         };
         resize();
@@ -955,8 +956,13 @@ CRITICAL MATH INSTRUCTION:
             ) : (
                 /* ── MAIN INTERFACE ─────────────────────────────────────────────────── */
                 <div style={{ position: 'absolute', inset: 0, zIndex: 10 }}>
+                    {/* Sidebar Backdrop (Mobile only) */}
+                    {isSidebarOpen && (
+                        <div onClick={() => setIsSidebarOpen(false)} style={{ position: 'fixed', inset: 0, zIndex: 99, background: 'rgba(0,0,0,0.5)', backdropFilter: 'blur(4px)', display: window.innerWidth <= 768 ? 'block' : 'none' }} />
+                    )}
+
                     {/* Sidebar */}
-                    <div style={{ position: 'absolute', top: 0, left: isSidebarOpen ? 0 : '-320px', width: '320px', height: '100vh', background: 'rgba(10, 10, 10, 0.65)', backdropFilter: 'blur(32px)', WebkitBackdropFilter: 'blur(32px)', borderRight: '1px solid rgba(255, 255, 255, 0.08)', boxShadow: '24px 0 64px rgba(0, 0, 0, 0.5)', transition: 'left 0.5s cubic-bezier(0.16, 1, 0.3, 1)', zIndex: 100, display: 'flex', flexDirection: 'column', padding: '32px 24px' }}>
+                    <div className={`sidebar-overlay ${isSidebarOpen ? 'sidebar-open' : ''}`} style={{ position: 'absolute', top: 0, left: isSidebarOpen ? 0 : '-320px', width: '320px', height: '100vh', background: 'rgba(10, 10, 10, 0.75)', backdropFilter: 'blur(40px)', WebkitBackdropFilter: 'blur(40px)', borderRight: '1px solid rgba(255, 255, 255, 0.08)', boxShadow: '24px 0 64px rgba(0, 0, 0, 0.5)', transition: 'left 0.5s cubic-bezier(0.16, 1, 0.3, 1)', zIndex: 100, display: 'flex', flexDirection: 'column', padding: '32px 24px' }}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '40px' }}>
                             <h2 style={{ color: '#fff', fontSize: '14px', fontWeight: 600, margin: 0, letterSpacing: '2px', opacity: 0.8 }}>DASHBOARD</h2>
                             <button onClick={() => setIsSidebarOpen(false)} style={{ background: 'none', border: 'none', color: '#fff', cursor: 'pointer', opacity: 0.4, transition: 'opacity 0.2s' }} onMouseOver={e => e.currentTarget.style.opacity = 1} onMouseOut={e => e.currentTarget.style.opacity = 0.4}><X size={20} /></button>
@@ -1039,15 +1045,15 @@ CRITICAL MATH INSTRUCTION:
                         </div>
                     </div>
 
-                    <div style={{ position: 'relative', zIndex: 10, width: '100%', height: '100%', display: 'flex', flexDirection: 'column', transition: 'opacity 0.4s', opacity: isSidebarOpen ? 0.4 : 1, filter: isSidebarOpen ? 'blur(4px)' : 'none' }}>
-                        {/* Header */}
-                        <div style={{ padding: '32px 40px 16px', position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                            <button onClick={() => setIsSidebarOpen(true)} style={{ position: 'absolute', left: '40px', background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '12px', color: '#fff', cursor: 'pointer', padding: '10px', transition: 'all 0.2s' }} onMouseOver={(e) => e.currentTarget.style.background = 'rgba(255,255,255,0.08)'} onMouseOut={(e) => e.currentTarget.style.background = 'rgba(255,255,255,0.03)'}>
+                    <div style={{ position: 'relative', zIndex: 10, width: '100%', height: '100%', display: 'flex', flexDirection: 'column', transition: 'all 0.4s cubic-bezier(0.16, 1, 0.3, 1)', opacity: (isSidebarOpen && window.innerWidth <= 768) ? 0.3 : 1, filter: (isSidebarOpen && window.innerWidth <= 768) ? 'blur(8px)' : 'none', pointerEvents: (isSidebarOpen && window.innerWidth <= 768) ? 'none' : 'auto' }}>
+
+                        <div className="mobile-header" style={{ padding: '32px 40px 16px', position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                            <button className="mobile-btn" onClick={() => setIsSidebarOpen(true)} style={{ position: 'absolute', left: '40px', background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '12px', color: '#fff', cursor: 'pointer', padding: '10px', transition: 'all 0.2s', display: isSidebarOpen ? 'none' : 'flex' }} onMouseOver={(e) => e.currentTarget.style.background = 'rgba(255,255,255,0.08)'} onMouseOut={(e) => e.currentTarget.style.background = 'rgba(255,255,255,0.03)'}>
                                 <Menu size={20} />
                             </button>
 
-                            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', cursor: 'pointer' }} onClick={startNewChat}>
-                                <h1 style={{ margin: 0, fontSize: '28px', fontWeight: 400, fontFamily: "'Playfair Display', serif", color: '#fff', letterSpacing: '12px', textTransform: 'uppercase' }}>ZAARS</h1>
+                            <div className="mobile-title-container" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', cursor: 'pointer' }} onClick={startNewChat}>
+                                <h1 className="mobile-title" style={{ margin: 0, fontSize: '28px', fontWeight: 400, fontFamily: "'Playfair Display', serif", color: '#fff', letterSpacing: '12px', textTransform: 'uppercase' }}>ZAARS</h1>
                                 {isPrivateMode ? (
                                     <div style={{ padding: '4px 12px', background: 'rgba(128, 0, 128, 0.2)', border: '1px solid rgba(128, 0, 128, 0.4)', borderRadius: '12px', color: '#d18ced', fontSize: '9px', fontWeight: 600, letterSpacing: '3px', marginTop: '8px' }}>
                                         PRIVATE WINDOW
@@ -1058,7 +1064,8 @@ CRITICAL MATH INSTRUCTION:
                             </div>
 
                             {/* Right Header Icons */}
-                            <div style={{ position: 'absolute', right: '40px', display: 'flex', alignItems: 'center', gap: '16px' }}>
+                            <div className="mobile-hide" style={{ position: 'absolute', right: '40px', display: 'flex', alignItems: 'center', gap: '16px' }}>
+
                                 <button
                                     onClick={() => setCurrentView('profile')}
                                     style={{ display: 'flex', alignItems: 'center', gap: '10px', background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)', padding: '6px 14px 6px 6px', borderRadius: '24px', cursor: 'pointer', color: '#fff', transition: 'all 0.2s' }}
@@ -1274,8 +1281,9 @@ CRITICAL MATH INSTRUCTION:
                                 )}
 
                                 {/* Floating Input Dock */}
-                                <div style={{ padding: '0 24px 48px', display: 'flex', flexDirection: 'column', alignItems: 'center', width: '100%', boxSizing: 'border-box' }}>
+                                <div className="mobile-dock" style={{ padding: '0 24px 48px', display: 'flex', flexDirection: 'column', alignItems: 'center', width: '100%', boxSizing: 'border-box' }}>
                                     <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', width: '100%', maxWidth: '860px' }}>
+
 
                                         {uploadedFiles.length > 0 && (
                                             <div style={{ display: 'flex', gap: '12px', padding: '10px', overflowX: 'auto', width: '100%', maxWidth: '860px', scrollbarWidth: 'none' }}>
@@ -1297,7 +1305,8 @@ CRITICAL MATH INSTRUCTION:
                                             </div>
                                         )}
 
-                                        <div style={{ display: 'flex', gap: '12px', alignItems: 'center', background: 'rgba(0, 0, 0, 0.4)', backdropFilter: 'blur(40px) saturate(1.5)', WebkitBackdropFilter: 'blur(40px) saturate(1.5)', border: '1px solid rgba(255, 255, 255, 0.12)', boxShadow: '0 24px 48px rgba(0, 0, 0, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.1)', borderRadius: '32px', padding: '10px 14px', width: '100%', boxSizing: 'border-box' }}>
+                                        <div className="mobile-input-container" style={{ display: 'flex', gap: '12px', alignItems: 'center', background: 'rgba(0, 0, 0, 0.4)', backdropFilter: 'blur(40px) saturate(1.5)', WebkitBackdropFilter: 'blur(40px) saturate(1.5)', border: '1px solid rgba(255, 255, 255, 0.12)', boxShadow: '0 24px 48px rgba(0, 0, 0, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.1)', borderRadius: '32px', padding: '10px 14px', width: '100%', boxSizing: 'border-box' }}>
+
                                             <input ref={fileInputRef} type="file" multiple accept="image/*,.pdf,.docx,.txt" onChange={handleFileUpload} style={{ display: 'none' }} />
 
                                             <Magnet padding={50} magnetStrength={-3} disabled={isProcessing}>
@@ -1309,18 +1318,19 @@ CRITICAL MATH INSTRUCTION:
                                             <input type="text" value={input} onChange={(e) => setInput(e.target.value)} onKeyPress={(e) => e.key === 'Enter' && handleSend()} placeholder={uploadedFiles.length > 0 ? `Ask about ${uploadedFiles.length} files...` : "Message ZAARS..."} disabled={isProcessing || isClarifying} style={{ flex: 1, padding: '12px 16px', background: 'transparent', border: 'none', color: '#fff', outline: 'none', fontSize: '15px', fontWeight: 400 }} />
 
                                             <Magnet padding={60} magnetStrength={-3} disabled={isProcessing || isClarifying}>
-                                                <button onClick={() => setMode(prev => prev === 'reasoning' ? 'simple' : 'reasoning')} disabled={isProcessing || isClarifying} title={`Switch Mode`} style={{ padding: '12px 20px', background: mode === 'reasoning' ? 'rgba(180, 100, 255, 0.15)' : 'transparent', border: mode === 'reasoning' ? '1px solid rgba(180, 100, 255, 0.3)' : '1px solid transparent', borderRadius: '24px', color: mode === 'reasoning' ? '#fc42ff' : 'rgba(255,255,255,0.6)', fontSize: '13px', fontWeight: 600, cursor: isProcessing || isClarifying ? 'default' : 'pointer', display: 'flex', alignItems: 'center', gap: '8px', transition: 'all 0.3s ease', whiteSpace: 'nowrap' }}>
+                                                <button className="mobile-mode-btn" onClick={() => setMode(prev => prev === 'reasoning' ? 'simple' : 'reasoning')} disabled={isProcessing || isClarifying} title={`Switch Mode`} style={{ padding: '12px 20px', background: mode === 'reasoning' ? 'rgba(180, 100, 255, 0.15)' : 'transparent', border: mode === 'reasoning' ? '1px solid rgba(180, 100, 255, 0.3)' : '1px solid transparent', borderRadius: '24px', color: mode === 'reasoning' ? '#fc42ff' : 'rgba(255,255,255,0.6)', fontSize: '13px', fontWeight: 600, cursor: isProcessing || isClarifying ? 'default' : 'pointer', display: 'flex', alignItems: 'center', gap: '8px', transition: 'all 0.3s ease', whiteSpace: 'nowrap' }}>
                                                     {mode === 'reasoning' ? <Brain size={16} /> : <Zap size={16} />}
                                                     {mode === 'reasoning' ? 'Reasoning' : 'Simple'}
                                                 </button>
                                             </Magnet>
 
                                             <Magnet padding={60} magnetStrength={-3} disabled={!input.trim() || isProcessing || isClarifying}>
-                                                <button onClick={handleClarify} disabled={!input.trim() || isProcessing || isClarifying} title="Auto-Refine Query" style={{ padding: '12px 20px', background: 'rgba(255, 255, 255, 0.08)', border: '1px solid rgba(255, 255, 255, 0.05)', borderRadius: '24px', color: '#fff', fontSize: '13px', fontWeight: 600, cursor: input.trim() && !isProcessing && !isClarifying ? 'pointer' : 'default', display: 'flex', alignItems: 'center', gap: '8px', opacity: input.trim() && !isProcessing && !isClarifying ? 1 : 0.3, transition: 'all 0.3s ease', whiteSpace: 'nowrap' }}>
+                                                <button className="mobile-refine-btn" onClick={handleClarify} disabled={!input.trim() || isProcessing || isClarifying} title="Auto-Refine Query" style={{ padding: '12px 20px', background: 'rgba(255, 255, 255, 0.08)', border: '1px solid rgba(255, 255, 255, 0.05)', borderRadius: '24px', color: '#fff', fontSize: '13px', fontWeight: 600, cursor: input.trim() && !isProcessing && !isClarifying ? 'pointer' : 'default', display: 'flex', alignItems: 'center', gap: '8px', opacity: input.trim() && !isProcessing && !isClarifying ? 1 : 0.3, transition: 'all 0.3s ease', whiteSpace: 'nowrap' }}>
                                                     {isClarifying ? <Loader2 size={16} style={{ animation: 'spin 1s linear infinite' }} /> : <Sparkles size={16} />}
-                                                    Refine
+                                                    <span className="mobile-hide">Refine</span>
                                                 </button>
                                             </Magnet>
+
 
                                             <Magnet padding={60} magnetStrength={-2.5} disabled={!input.trim() && uploadedFiles.length === 0 || isProcessing || isClarifying}>
                                                 <button onClick={handleSend} disabled={!input.trim() && uploadedFiles.length === 0 || isProcessing || isClarifying} style={{ padding: '12px', background: (input.trim() || uploadedFiles.length > 0) ? '#fff' : 'rgba(255,255,255,0.1)', border: 'none', borderRadius: '50%', cursor: (input.trim() || uploadedFiles.length > 0) && !isProcessing && !isClarifying ? 'pointer' : 'default', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'all 0.3s ease', color: (input.trim() || uploadedFiles.length > 0) ? '#000' : '#fff' }}>
@@ -1338,14 +1348,35 @@ CRITICAL MATH INSTRUCTION:
 
             <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=Playfair+Display:ital,wght@0,400..900;1,400..900&display=swap');
-        * { box-sizing: border-box; }
-        html, body { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; background: #050505; }
+        * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+        html, body { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; background: #050505; overscroll-behavior: none; }
         .animate-spin { animation: spin 1s linear infinite; }
         @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
         ::-webkit-scrollbar { width: 4px; }
         ::-webkit-scrollbar-track { background: transparent; }
         ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 10px; }
         ::placeholder { color: rgba(255,255,255,0.3) !important; }
+
+        @media (max-width: 768px) {
+            .sidebar-overlay { 
+                position: fixed !important; 
+                z-index: 1000 !important; 
+                width: 280px !important; 
+                transform: translateX(-100%);
+                transition: transform 0.4s cubic-bezier(0.16, 1, 0.3, 1) !important;
+            }
+            .sidebar-open { transform: translateX(0) !important; }
+            .mobile-hide { display: none !important; }
+            .mobile-header { padding: 20px 24px !important; }
+            .mobile-title { font-size: 20px !important; letter-spacing: 6px !important; }
+            .mobile-dock { padding: 0 16px 24px !important; }
+            .mobile-input-container { padding: 8px 10px !important; border-radius: 24px !important; }
+            .mobile-btn { padding: 10px !important; }
+            .mobile-mode-btn { display: none !important; }
+            .mobile-refine-btn { padding: 8px 14px !important; font-size: 11px !important; }
+            .message-text { font-size: 14px !important; }
+            .profile-card { padding: 24px !important; border-radius: 24px !important; }
+        }
       `}</style>
         </div>
     );
