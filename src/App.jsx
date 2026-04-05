@@ -1,3 +1,4 @@
+// ZAARS ENGINE v1.0.4 - UI VISIBILITY UPDATE
 import React, { useState, useRef, useEffect } from 'react';
 import {
     Send,
@@ -331,6 +332,7 @@ export default function App() {
         const saved = localStorage.getItem('zaars_user_profile');
         return saved ? JSON.parse(saved) : { name: 'Guest', originalUsername: 'Guest', email: '', avatar: null, isGoogle: false, apiKey: '' };
     });
+    const [preferredModel, setPreferredModel] = useState(() => localStorage.getItem('zaars_model') || 'gemini');
 
     // App View State
     const [currentView, setCurrentView] = useState('chat'); // 'chat' | 'profile'
@@ -644,7 +646,9 @@ export default function App() {
             try {
                 // Determine model
                 const hasImage = chatHistory.some(msg => Array.isArray(msg.content) && msg.content.some(part => part.type === 'image_url'));
-                const model = hasImage ? "llama-3.2-90b-vision-preview" : "llama-3.3-70b-versatile";
+                // Use Gemini for vision ALWAYS (due to Groq rotations); otherwise use preference
+                const model = hasImage ? "gemini-1.5-flash" : (preferredModel === 'gemini' ? "gemini-1.5-flash" : "llama-3.3-70b-versatile");
+                console.log(`[ZAARS] Dispatching to Model: ${model} (hasImage: ${hasImage}, preference: ${preferredModel})`);
 
                 // Format messages
                 const messages = [];
@@ -657,8 +661,20 @@ export default function App() {
                 });
 
                 let response;
-                if (userProvidedKey) {
-                    // Direct mode: user provided their own key
+                // ALWAYS use the Proxy for vision models or if NO user key is provided
+                if (model.startsWith('gemini') || !userProvidedKey) {
+                    // LINKED / AUTOMATIC mode OR Vision Mode (Proxy always has Gemini key)
+                    response = await fetch(`${apiUrl}/api/ai/chat`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            model,
+                            messages,
+                            response_format: useJson ? { type: "json_object" } : { type: "text" }
+                        })
+                    });
+                } else {
+                    // Direct mode: user provided their own key (Only for non-vision/Groq models)
                     response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${userProvidedKey}` },
@@ -667,17 +683,6 @@ export default function App() {
                             messages,
                             temperature: 0.1,
                             max_tokens: 4096,
-                            response_format: useJson ? { type: "json_object" } : { type: "text" }
-                        })
-                    });
-                } else {
-                    // LINKED / AUTOMATIC mode: Hit our proxy
-                    response = await fetch(`${apiUrl}/api/ai/chat`, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({
-                            model,
-                            messages,
                             response_format: useJson ? { type: "json_object" } : { type: "text" }
                         })
                     });
@@ -694,8 +699,16 @@ export default function App() {
                 }
 
                 const data = JSON.parse(await response.text());
-                const text = data.choices?.[0]?.message?.content;
+                let text = data.choices?.[0]?.message?.content;
                 if (!text) throw new Error("No response from AI");
+
+                // Sanitize broken LaTeX/Escapes
+                text = text.replace(/\x0C/g, '\\frac'); // Form feed character
+                text = text.replace(/\\f/g, '\\frac');
+                if (typeof text === 'string') {
+                    // Fix some other common mis-escapes
+                    text = text.replace(/\\t/g, '\\text');
+                }
 
                 if (useJson) {
                     try { return JSON.parse(text); } catch(e) { return { type: "chat", solution: text }; }
@@ -862,16 +875,16 @@ export default function App() {
                 return { role: 'user', content: finalContent };
             });
 
-            const baseInstruction = `You are ZAARS (Zero-error AI Agent Reasoning System), a specialist Mathematical Reasoning Engine. 
-CRITICAL MATH INSTRUCTION:
-- For complex math, provide step-by-step logical derivation.
-- Always use LaTeX formatting for mathematical expressions. 
-- Use standard Markdown for text and $...$ for inline math or $$...$$ for block math.
-- Avoid using raw characters if they can be represented in math mode.
-- Scan ALL provided images carefully for math notes, equations, or diagrams.
-- If multiple documents or images are provided, synthesize the information from all of them to solve the query.
-- ADAPTABILITY: If notes/docs show a specific step-by-step method, notation style, or educational framework, ADAPT your logic to match that exact method.
-- ACCURACY: Double-check every calculation. Error-free output is paramount.`;
+            const baseInstruction = `You are ZAARS (Zero-error AI Agent Reasoning System), a specialized Mathematical Reasoning & Scientific Analysis Engine. 
+CRITICAL FORMATTING INSTRUCTIONS for MATH & SCIENCE:
+- **Derivation Logic**: Always provide a rigorous, step-by-step logical derivation for any complex query.
+- **LaTeX Priority**: All mathematical expressions, formulas, and symbols MUST be written in LaTeX. 
+- **Wait, Formatting**: Use $...$ for inline math (e.g., $x^2 + y^2 = r^2$) and $$...$$ for block/standalone equations.
+- **Backslash Escape**: Ensure ALL LaTeX commands are correct (e.g., use \\frac{a}{b}, NOT raw characters). 
+- **Readability**: Break down long calculations into clear, numbered steps. Use bolding for key results.
+- **Visuals**: If analyzing an image, reference specific coordinates or visible markers from the image in your text.
+- **Adaptation**: Match the difficulty level and notations found in uploaded notes or past context.
+- **Zero-Error**: Verify every calculation step internally before presenting the solution.`;
 
             const modeInstruction = mode === 'reasoning' 
                 ? "Your response MUST be a JSON object with strictly these keys: 'type' (set to 'reasoning'), 'thought' (your inner reasoning; if the input is a simple greeting or non-math query, keep this extremely brief or empty), 'verification' (checking your logic), and 'solution' (the final answer in LaTeX or clean text)." 
@@ -1048,6 +1061,25 @@ CRITICAL MATH INSTRUCTION:
                                 <Plus size={18} /> New Chat
                             </button>
 
+                            {/* Sidebar Model Switcher (Visible on Mobile) */}
+                            <div style={{ marginBottom: '32px' }}>
+                                <div style={{ fontSize: '11px', color: 'rgba(255, 255, 255, 0.4)', fontWeight: 600, letterSpacing: '1px', marginBottom: '12px', paddingLeft: '8px' }}>AI ENGINE</div>
+                                <div style={{ display: 'flex', background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)', padding: '4px', borderRadius: '20px', gap: '4px' }}>
+                                    <button 
+                                        onClick={() => { setPreferredModel('gemini'); localStorage.setItem('zaars_model', 'gemini'); }}
+                                        style={{ flex: 1, padding: '10px', border: 'none', borderRadius: '16px', fontSize: '11px', fontWeight: 600, cursor: 'pointer', background: preferredModel === 'gemini' ? 'rgba(252, 66, 255, 0.2)' : 'transparent', color: preferredModel === 'gemini' ? '#fc42ff' : 'rgba(255,255,255,0.4)', transition: 'all 0.2s' }}
+                                    >
+                                        Gemini 1.5
+                                    </button>
+                                    <button 
+                                        onClick={() => { setPreferredModel('llama'); localStorage.setItem('zaars_model', 'llama'); }}
+                                        style={{ flex: 1, padding: '10px', border: 'none', borderRadius: '16px', fontSize: '11px', fontWeight: 600, cursor: 'pointer', background: preferredModel === 'llama' ? 'rgba(255, 255, 255, 0.1)' : 'transparent', color: preferredModel === 'llama' ? '#fff' : 'rgba(255,255,255,0.4)', transition: 'all 0.2s' }}
+                                    >
+                                        Llama 3.3
+                                    </button>
+                                </div>
+                            </div>
+
                             <div style={{ position: 'relative', marginBottom: '32px' }}>
                                 <Search size={16} color="rgba(255,255,255,0.4)" style={{ position: 'absolute', left: '16px', top: '50%', transform: 'translateY(-50%)' }} />
                                 <input type="text" placeholder="Search history..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} style={{ width: '100%', background: 'rgba(0, 0, 0, 0.2)', border: '1px solid rgba(255, 255, 255, 0.08)', borderRadius: '16px', padding: '14px 16px 14px 44px', color: '#fff', fontSize: '14px', outline: 'none', boxSizing: 'border-box' }} />
@@ -1104,17 +1136,35 @@ CRITICAL MATH INSTRUCTION:
 
                             <div className="mobile-title-container" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', cursor: 'pointer' }} onClick={startNewChat}>
                                 <h1 className="mobile-title" style={{ margin: 0, fontSize: '28px', fontWeight: 400, fontFamily: "'Playfair Display', serif", color: '#fff', letterSpacing: '12px', textTransform: 'uppercase' }}>ZAARS</h1>
-                                {isPrivateMode ? (
+                                 {isPrivateMode ? (
                                     <div style={{ padding: '4px 12px', background: 'rgba(128, 0, 128, 0.2)', border: '1px solid rgba(128, 0, 128, 0.4)', borderRadius: '12px', color: '#d18ced', fontSize: '9px', fontWeight: 600, letterSpacing: '3px', marginTop: '8px' }}>
                                         PRIVATE WINDOW
                                     </div>
                                 ) : (
-                                    <div style={{ fontSize: '8px', fontFamily: "'Playfair Display', serif", color: 'rgba(255, 255, 255, 0.5)', letterSpacing: '4px', marginTop: '4px' }}>ZERO-ERROR AI AGENT REASONING SYSTEM</div>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '4px' }}>
+                                        <div style={{ fontSize: '8px', fontFamily: "'Playfair Display', serif", color: 'rgba(255, 255, 255, 0.5)', letterSpacing: '4px' }}>ZERO-ERROR AI AGENT REASONING SYSTEM</div>
+                                        <div style={{ padding: '2px 6px', background: 'rgba(252, 66, 255, 0.1)', border: '1px solid rgba(252, 66, 255, 0.3)', borderRadius: '6px', color: '#fc42ff', fontSize: '7px', fontWeight: 800 }}>v1.0.4</div>
+                                    </div>
                                 )}
                             </div>
 
-                            {/* Right Header Icons */}
-                            <div className="mobile-hide" style={{ position: 'absolute', right: '40px', display: 'flex', alignItems: 'center', gap: '16px' }}>
+                            {/* Right Header Icons - REMOVED mobile-hide for visibility */}
+                            <div style={{ position: 'absolute', right: '40px', display: 'flex', alignItems: 'center', gap: '16px' }}>
+                                {/* Header Model Switcher (Visible on Desktop/Large screens) */}
+                                <div className="mobile-hide" style={{ display: 'flex', background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)', padding: '2px', borderRadius: '14px', gap: '2px' }}>
+                                    <button 
+                                        onClick={() => { setPreferredModel('gemini'); localStorage.setItem('zaars_model', 'gemini'); }}
+                                        style={{ padding: '6px 12px', border: 'none', borderRadius: '11px', fontSize: '10px', fontWeight: 600, cursor: 'pointer', background: preferredModel === 'gemini' ? 'rgba(252, 66, 255, 0.2)' : 'transparent', color: preferredModel === 'gemini' ? '#fc42ff' : 'rgba(255,255,255,0.4)', transition: 'all 0.2s', letterSpacing: '1px' }}
+                                    >
+                                        GEMINI
+                                    </button>
+                                    <button 
+                                        onClick={() => { setPreferredModel('llama'); localStorage.setItem('zaars_model', 'llama'); }}
+                                        style={{ padding: '6px 12px', border: 'none', borderRadius: '11px', fontSize: '10px', fontWeight: 600, cursor: 'pointer', background: preferredModel === 'llama' ? 'rgba(255, 255, 255, 0.1)' : 'transparent', color: preferredModel === 'llama' ? '#fff' : 'rgba(255,255,255,0.4)', transition: 'all 0.2s', letterSpacing: '1px' }}
+                                    >
+                                        LLAMA
+                                    </button>
+                                </div>
 
                                 <button
                                     onClick={() => setCurrentView('profile')}
@@ -1355,6 +1405,24 @@ CRITICAL MATH INSTRUCTION:
                                             </div>
                                         )}
 
+                                        {/* Floating Model Switcher (High Visibility) */}
+                                        <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '8px' }}>
+                                            <div style={{ display: 'flex', background: 'rgba(0,0,0,0.6)', border: '1px solid rgba(255,255,255,0.15)', padding: '4px', borderRadius: '24px', backdropFilter: 'blur(30px)', boxShadow: '0 8px 32px rgba(0,0,0,0.4)', width: 'fit-content' }}>
+                                                <button 
+                                                    onClick={() => { setPreferredModel('gemini'); localStorage.setItem('zaars_model', 'gemini'); }}
+                                                    style={{ padding: '8px 24px', border: 'none', borderRadius: '20px', fontSize: '11px', fontWeight: 700, cursor: 'pointer', background: preferredModel === 'gemini' ? 'linear-gradient(45deg, #fc42ff, #2196f3)' : 'transparent', color: '#fff', transition: 'all 0.3s cubic-bezier(0.16, 1, 0.3, 1)', transform: preferredModel === 'gemini' ? 'scale(1.05)' : 'scale(1)', letterSpacing: '2px', textTransform: 'uppercase' }}
+                                                >
+                                                    GEMINI 1.5 PRO
+                                                </button>
+                                                <button 
+                                                    onClick={() => { setPreferredModel('llama'); localStorage.setItem('zaars_model', 'llama'); }}
+                                                    style={{ padding: '8px 24px', border: 'none', borderRadius: '20px', fontSize: '11px', fontWeight: 700, cursor: 'pointer', background: preferredModel === 'llama' ? 'rgba(255,255,255,0.15)' : 'transparent', color: preferredModel === 'llama' ? '#fff' : 'rgba(255,255,255,0.4)', transition: 'all 0.3s cubic-bezier(0.16, 1, 0.3, 1)', transform: preferredModel === 'llama' ? 'scale(1.05)' : 'scale(1)', letterSpacing: '2px', textTransform: 'uppercase' }}
+                                                >
+                                                    LLAMA 3.3
+                                                </button>
+                                            </div>
+                                        </div>
+
                                         <div className="mobile-input-container" style={{ display: 'flex', gap: '12px', alignItems: 'center', background: 'rgba(0, 0, 0, 0.4)', backdropFilter: 'blur(40px) saturate(1.5)', WebkitBackdropFilter: 'blur(40px) saturate(1.5)', border: '1px solid rgba(255, 255, 255, 0.12)', boxShadow: '0 24px 48px rgba(0, 0, 0, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.1)', borderRadius: '32px', padding: '10px 14px', width: '100%', boxSizing: 'border-box' }}>
 
                                             <input ref={fileInputRef} type="file" multiple accept="image/*,.pdf,.docx,.txt" onChange={handleFileUpload} style={{ display: 'none' }} />
@@ -1406,6 +1474,30 @@ CRITICAL MATH INSTRUCTION:
         ::-webkit-scrollbar-track { background: transparent; }
         ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 10px; }
         ::placeholder { color: rgba(255,255,255,0.3) !important; }
+        
+        .math-container {
+            width: 100%;
+            overflow-x: auto;
+            padding: 12px 0;
+            line-height: 1.8;
+            font-family: 'Inter', sans-serif;
+        }
+        .math-container p { margin-bottom: 24px; }
+        .math-container blockquote { 
+            border-left: 2px solid rgba(255,255,255,0.1); 
+            padding-left: 20px; 
+            margin: 20px 0; 
+            font-style: italic; 
+            color: rgba(255,255,255,0.6); 
+        }
+        .katex-display { 
+            background: rgba(255, 255, 255, 0.02);
+            padding: 24px;
+            border-radius: 20px;
+            border: 1px solid rgba(255, 255, 255, 0.04);
+            margin: 2.5em 0 !important;
+        }
+        .katex { font-size: 1.1em; }
 
         @media (max-width: 768px) {
             .sidebar-overlay { 

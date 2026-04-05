@@ -205,37 +205,89 @@ apiRouter.post('/user/update', authenticateToken, async (req, res) => {
 
 // AI Proxy Endpoint
 apiRouter.post('/ai/chat', async (req, res) => {
-  const { messages, model, response_format } = req.body;
-  const apiKey = process.env.VITE_GROQ_API_KEY || process.env.GROQ_API_KEY;
+  const { messages, response_format } = req.body;
+  let { model } = req.body;
 
-  if (!apiKey) {
-    return res.status(500).json({ error: 'Server misconfigured: Groq API key missing' });
+  // Intercept ANY decommissioned Llama 3.2 vision models from cached clients
+  if (model.includes('llama-3.2') && model.includes('vision')) {
+    console.log(`[BACKEND] Intercepting decommissioned model ${model} -> mapping to gemini-1.5-flash`);
+    model = 'gemini-1.5-flash';
   }
 
-  try {
-    const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${apiKey}`,
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({
-        model,
-        messages,
-        ...(response_format ? { response_format } : {}),
-        temperature: 0.1,
-        max_tokens: 4096
-      })
-    });
+  console.log(`[BACKEND] AI Request for Model: ${model}`);
+  const geminiKey = process.env.VITE_GEMINI_API_KEY || process.env.GEMINI_API_KEY;
+  const groqKey = process.env.VITE_GROQ_API_KEY || process.env.GROQ_API_KEY;
 
-    const data = await response.json();
-    if (!response.ok) {
-        throw new Error(data.error?.message || 'Groq API request failed');
+  if (model.startsWith('gemini')) {
+    if (!geminiKey) return res.status(500).json({ error: 'Gemini API key missing' });
+    
+    try {
+        const contents = messages.map(msg => {
+            if (msg.role === 'system') return { role: 'user', parts: [{ text: `[SYSTEM]: ${msg.content}` }] };
+            if (Array.isArray(msg.content)) {
+                return {
+                    role: msg.role === 'assistant' ? 'model' : 'user',
+                    parts: msg.content.map(part => {
+                        if (part.type === 'text') return { text: part.text };
+                        if (part.type === 'image_url') {
+                            const match = part.image_url.url.match(/^data:(image\/[a-zA-Z]+);base64,(.*)$/);
+                            if (match) return { inline_data: { mime_type: match[1], data: match[2] } };
+                        }
+                        return { text: typeof part === 'string' ? part : JSON.stringify(part) };
+                    })
+                };
+            }
+            return { role: msg.role === 'assistant' ? 'model' : 'user', parts: [{ text: msg.content }] };
+        });
+
+        const systemMessage = messages.find(m => m.role === 'system');
+
+        const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${geminiKey}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                contents,
+                ...(systemMessage ? { system_instruction: { parts: [{ text: systemMessage.content }] } } : {}),
+                generationConfig: {
+                    ...(response_format?.type === 'json_object' ? { response_mime_type: 'application/json' } : {}),
+                    temperature: 0.1,
+                    maxOutputTokens: 8192
+                }
+            })
+        });
+
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error?.message || 'Gemini API request failed');
+        
+        const text = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
+        res.json({ choices: [{ message: { content: text } }] });
+    } catch (err) {
+        console.error("Gemini Proxy Error:", err);
+        res.status(500).json({ error: err.message });
     }
-    res.json(data);
-  } catch (err) {
-    console.error("AI Proxy Error:", err);
-    res.status(500).json({ error: err.message });
+  } else {
+    if (!groqKey) return res.status(500).json({ error: 'Server misconfigured: Groq API key missing' });
+
+    try {
+        const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+            method: 'POST',
+            headers: { 'Authorization': `Bearer ${groqKey}`, 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                model,
+                messages,
+                ...(response_format ? { response_format } : {}),
+                temperature: 0.1,
+                max_tokens: 4096
+            })
+        });
+
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error?.message || 'Groq API request failed');
+        res.json(data);
+    } catch (err) {
+        console.error("AI Proxy Error:", err);
+        res.status(500).json({ error: err.message });
+    }
   }
 });
 
