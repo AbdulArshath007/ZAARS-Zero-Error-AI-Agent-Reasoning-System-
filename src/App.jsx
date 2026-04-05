@@ -411,8 +411,18 @@ export default function App() {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ username: authData.username, password: authData.password })
             });
+
+            if (!res.ok) {
+                const text = await res.text();
+                const firstChar = text.trim().charAt(0);
+                if (firstChar === '<' || firstChar === '{') {
+                    const snippet = text.slice(0, 80).replace(/<[^>]*>?/gm, ''); 
+                    throw new Error(`API Error ${res.status}: ${snippet || 'Page Not Found'}`);
+                }
+                throw new Error(`API Error ${res.status}`);
+            }
+
             const data = await res.json();
-            if (!res.ok) throw new Error(data.error || 'Authentication failed');
 
             const newProfile = { ...userProfile, name: data.user.name, originalUsername: data.user.originalUsername, email: data.user.email || '', isGoogle: data.user.isGoogle, token: data.token, avatar: data.user.avatar, apiKey: data.user.apiKey || '' };
             setUserProfile(newProfile);
@@ -668,17 +678,16 @@ export default function App() {
                 }
 
                 if (!response.ok) {
-                    const errData = await response.json().catch(() => ({}));
-                    if (response.status === 429) { // Rate limit
-                        retries--;
-                        await new Promise(r => setTimeout(r, delay));
-                        delay *= 2;
-                        continue;
+                    const text = await response.text();
+                    const firstChar = text.trim().charAt(0);
+                    if (firstChar === '<' || firstChar === '{') {
+                        const snippet = text.slice(0, 80).replace(/<[^>]*>?/gm, '');
+                        throw new Error(`AI Gateway ${response.status}: ${snippet || 'Service Unavailable'}`);
                     }
-                    throw new Error(errData.error || `Error ${response.status}`);
+                    throw new Error(`AI Gateway ${response.status}`);
                 }
 
-                const data = await response.json();
+                const data = JSON.parse(await response.text());
                 const text = data.choices?.[0]?.message?.content;
                 if (!text) throw new Error("No response from AI");
 
