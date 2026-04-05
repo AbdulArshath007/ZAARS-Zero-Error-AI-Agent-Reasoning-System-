@@ -159,11 +159,25 @@ npm run dev
 
 ---
 
+## ☁️ Vercel Deployment
+To deploy ZAARS on Vercel:
+1. **Push your code** to GitHub.
+2. **Connect your repository** to Vercel.
+3. **Configure Environment Variables** in Vercel Project Settings:
+   - `VITE_GROQ_API_KEY`: Your Groq Cloud API Key.
+   - `VITE_API_URL`: The URL of your running Node.js backend (if used).
+   - `DATABASE_URL`: Your NeonDB/PostgreSQL connection string.
+
+**Note:** If you don't set `VITE_GROQ_API_KEY` in Vercel, you can now enter it manually in the **Profile Settings** within the deployed app!
+
+---
+
 ## 🧠 How It Works
 1. **Multi-File Docking**: Drop any combination of images and documents into the chat input.
 2. **Intelligent Routing**: Select "Reasoning" mode for complex problems; ZAARS will switch to higher-parameter Llama 4 models.
-3. **KaTeX Rendering**: Solutions are delivered in clear, typeset mathematical notation.
-4. **Private Shield**: Toggle the "Shield" icon in the sidebar to enter a fully private session.
+3. **Manual API Key**: If deployed and missing a key, go to **Profile Settings** and enter your own Groq Key safely in your browser.
+4. **KaTeX Rendering**: Solutions are delivered in clear, typeset mathematical notation.
+5. **Private Shield**: Toggle the "Shield" icon in the sidebar to enter a fully private session.
 
 ---
 

@@ -21,7 +21,8 @@ import {
     Settings,
     LogOut,
     Camera,
-    Activity
+    Activity,
+    Trash2
 } from 'lucide-react';
 import * as THREE from 'three';
 import { GoogleLogin } from '@react-oauth/google';
@@ -316,7 +317,10 @@ const ProfileCropper = ({ src, onSave, onCancel }) => {
 // ── Main App Controller ──────────────────────────────────────────────────────
 export default function App() {
     // Authentication & User State
-    const [isAuthenticated, setIsAuthenticated] = useState(false);
+    const [isAuthenticated, setIsAuthenticated] = useState(() => {
+        const saved = localStorage.getItem('zaars_user_profile');
+        return saved ? !!JSON.parse(saved).token : false;
+    });
     const [authData, setAuthData] = useState({ username: '', password: '' });
     const [isAuthLoading, setIsAuthLoading] = useState(false);
     const [authError, setAuthError] = useState('');
@@ -376,6 +380,13 @@ export default function App() {
     const scrollToBottom = () => messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
 
     useEffect(() => { scrollToBottom(); }, [messages]);
+    
+    useEffect(() => {
+        if (isAuthenticated && userProfile.token) {
+            syncHistory(userProfile.token);
+        }
+    }, [isAuthenticated, userProfile.token]);
+
     useEffect(() => {
         if (isAuthenticated && messages.length === 0 && currentView === 'chat') {
             const prompts = isPrivateMode ? privateWelcomePrompts : welcomePrompts;
@@ -402,10 +413,11 @@ export default function App() {
             const data = await res.json();
             if (!res.ok) throw new Error(data.error || 'Authentication failed');
 
-            const newProfile = { ...userProfile, name: data.user.name, originalUsername: data.user.originalUsername, email: data.user.email || '', isGoogle: data.user.isGoogle, token: data.token };
+            const newProfile = { ...userProfile, name: data.user.name, originalUsername: data.user.originalUsername, email: data.user.email || '', isGoogle: data.user.isGoogle, token: data.token, avatar: data.user.avatar, apiKey: data.user.apiKey || '' };
             setUserProfile(newProfile);
             localStorage.setItem('zaars_user_profile', JSON.stringify(newProfile));
             setIsAuthenticated(true);
+            syncHistory(data.token);
         } catch (err) {
             setAuthError(err.message);
         } finally {
@@ -426,10 +438,11 @@ export default function App() {
             const data = await res.json();
             if (!res.ok) throw new Error(data.error || 'Google Auth failed');
             
-            const newProfile = { ...userProfile, name: data.user.name, originalUsername: data.user.originalUsername, email: data.user.email, isGoogle: true, token: data.token };
+            const newProfile = { ...userProfile, name: data.user.name, originalUsername: data.user.originalUsername, email: data.user.email || '', isGoogle: true, token: data.token, avatar: data.user.avatar, apiKey: data.user.apiKey || '' };
             setUserProfile(newProfile);
             localStorage.setItem('zaars_user_profile', JSON.stringify(newProfile));
             setIsAuthenticated(true);
+            syncHistory(data.token);
         } catch (err) {
             setAuthError(err.message);
         } finally {
@@ -444,10 +457,65 @@ export default function App() {
         setActiveSessionId(null);
         setNormalSessionBackup(null);
         setCurrentView('chat');
+        localStorage.removeItem('zaars_user_profile');
+    };
+
+    const syncHistory = async (token) => {
+        try {
+            const res = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:5000'}/user/sessions`, {
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+            const data = await res.json();
+            if (res.ok) setHistory(data);
+        } catch (e) { console.error("History sync failed:", e); }
+    };
+
+    const saveSessionToDB = async (sessionData) => {
+        const token = userProfile.token;
+        if (!token || isPrivateMode) return;
+        try {
+            const res = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:5000'}/user/sessions`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+                body: JSON.stringify(sessionData)
+            });
+            const data = await res.json();
+            if (res.ok) {
+                if (!activeSessionId) setActiveSessionId(data.id);
+                syncHistory(token);
+            }
+        } catch (e) { console.error("Failed to persist session:", e); }
+    };
+
+    const deleteSession = async (id, e) => {
+        e.stopPropagation();
+        const token = userProfile.token;
+        if (!token) return;
+        try {
+            const res = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:5000'}/user/sessions/${id}`, {
+                method: 'DELETE',
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+            if (res.ok) {
+                setHistory(prev => prev.filter(h => h.id !== id));
+                if (activeSessionId === id || activeSessionId == id) {
+                    setMessages([]);
+                    setActiveSessionId(null);
+                    setInsights(null);
+                }
+            }
+        } catch (e) { console.error("Deletion failed:", e); }
     };
 
     const handleProfileSave = async (newName) => {
         const updatedProfile = { ...userProfile, name: newName };
+        try {
+            await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:5000'}/user/update`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${userProfile.token}` },
+                body: JSON.stringify({ avatar_url: userProfile.avatar, api_key: userProfile.apiKey })
+            });
+        } catch (e) { console.error("Sync failed:", e); }
         setUserProfile(updatedProfile);
         localStorage.setItem('zaars_user_profile', JSON.stringify(updatedProfile));
         setCurrentView('chat');
@@ -462,15 +530,29 @@ export default function App() {
         e.target.value = '';
     };
 
-    const handleCropSave = (base64Image) => {
+    const handleCropSave = async (base64Image) => {
         const updatedProfile = { ...userProfile, avatar: base64Image };
+        try {
+            await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:5000'}/user/update`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${userProfile.token}` },
+                body: JSON.stringify({ avatar_url: base64Image })
+            });
+        } catch (e) { console.error("Sync failed:", e); }
         setUserProfile(updatedProfile);
         localStorage.setItem('zaars_user_profile', JSON.stringify(updatedProfile));
         setCropModalSrc(null);
     };
 
-    const handleRemoveProfilePic = () => {
+    const handleRemoveProfilePic = async () => {
         const updatedProfile = { ...userProfile, avatar: null };
+        try {
+            await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:5000'}/user/update`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${userProfile.token}` },
+                body: JSON.stringify({ avatar_url: null })
+            });
+        } catch (e) { console.error("Sync failed:", e); }
         setUserProfile(updatedProfile);
         localStorage.setItem('zaars_user_profile', JSON.stringify(updatedProfile));
     };
@@ -532,68 +614,69 @@ export default function App() {
 
     const callGroqAPI = async (chatHistory, systemInstruction = "", useJson = false) => {
         let retries = 5, delay = 1000;
-        const currentApiKey = import.meta.env.VITE_GROQ_API_KEY || "";
-        
-        if (!currentApiKey) {
-            if (useJson) {
-                return { type: "reasoning", thought: "No Groq API key detected.", verification: "Verified missing API key.", solution: "⚠️ Groq API Key Required." };
-            }
-            return "⚠️ Groq API Key Required. Please check your .env file.";
-        }
+        const userProvidedKey = userProfile.apiKey || "";
+        const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 
         while (retries > 0) {
             try {
-                const url = `https://api.groq.com/openai/v1/chat/completions`;
-                
-                // Determine if any message contains an image to pick the vision model
+                // Determine model
                 const hasImage = chatHistory.some(msg => Array.isArray(msg.content) && msg.content.some(part => part.type === 'image_url'));
                 const model = hasImage ? "meta-llama/llama-4-scout-17b-16e-instruct" : "llama-3.3-70b-versatile";
 
+                // Format messages
                 const messages = [];
                 if (systemInstruction) {
-                    messages.push({ role: "system", content: systemInstruction + (useJson ? " Return as JSON." : "") });
+                    messages.push({ role: "system", content: systemInstruction });
                 }
 
                 chatHistory.filter(msg => msg.role !== 'error').forEach(msg => {
-                    let groqContent;
-                    if (Array.isArray(msg.content)) {
-                        // Already formatted for OpenAI/Groq in handleSend
-                        groqContent = msg.content;
-                    } else {
-                        groqContent = typeof msg.content === 'string' ? msg.content : JSON.stringify(msg.content);
-                    }
-                    messages.push({ role: msg.role === 'user' ? 'user' : 'assistant', content: groqContent });
+                    messages.push({ role: msg.role === 'user' ? 'user' : 'assistant', content: msg.content });
                 });
 
-                const payload = {
-                    model,
-                    messages,
-                    temperature: 0.6,
-                    max_tokens: 4096,
-                    response_format: useJson ? { type: "json_object" } : { type: "text" }
-                };
-
-                const response = await fetch(url, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${currentApiKey}` },
-                    body: JSON.stringify(payload)
-                });
+                let response;
+                if (userProvidedKey) {
+                    // Direct mode: user provided their own key
+                    response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${userProvidedKey}` },
+                        body: JSON.stringify({
+                            model,
+                            messages,
+                            temperature: 0.1,
+                            max_tokens: 4096,
+                            response_format: useJson ? { type: "json_object" } : { type: "text" }
+                        })
+                    });
+                } else {
+                    // LINKED / AUTOMATIC mode: Hit our proxy
+                    response = await fetch(`${apiUrl}/api/ai/chat`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            model,
+                            messages,
+                            response_format: useJson ? { type: "json_object" } : { type: "text" }
+                        })
+                    });
+                }
 
                 if (!response.ok) {
                     const errData = await response.json().catch(() => ({}));
-                    throw new Error(errData.error?.message || `Groq HTTP error ${response.status}`);
+                    if (response.status === 429) { // Rate limit
+                        retries--;
+                        await new Promise(r => setTimeout(r, delay));
+                        delay *= 2;
+                        continue;
+                    }
+                    throw new Error(errData.error || `Error ${response.status}`);
                 }
 
                 const data = await response.json();
                 const text = data.choices?.[0]?.message?.content;
-                if (!text) throw new Error("No response content from Groq");
+                if (!text) throw new Error("No response from AI");
 
                 if (useJson) {
-                    try {
-                        return JSON.parse(text);
-                    } catch(e) {
-                        return { type: "chat", solution: text };
-                    }
+                    try { return JSON.parse(text); } catch(e) { return { type: "chat", solution: text }; }
                 }
                 return text;
             } catch (error) { 
@@ -623,8 +706,9 @@ export default function App() {
             const prompt = `Analyze user learning patterns from this log:\n\n${chatLog}`;
             const result = await callGroqAPI([{ role: 'user', content: prompt }], "Study Analytics AI.", false);
             setInsights(result);
-            if (!isPrivateMode && activeSessionId) {
+            if (!isPrivateMode) {
                 setHistory(prev => prev.map(s => s.id === activeSessionId ? { ...s, insights: result } : s));
+                saveSessionToDB({ id: activeSessionId, title: history.find(s => s.id === activeSessionId)?.title || '📎 Notes Analysis', messages, insights: result });
             }
         } catch (e) { console.error(e); } finally { setIsGeneratingInsights(false); }
     };
@@ -742,13 +826,13 @@ CRITICAL MATH INSTRUCTION:
             const finalMessages = [...newMessages, assistantMessage];
             setMessages(finalMessages);
 
-            // Only push to history if NOT in private mode
             if (!isPrivateMode) {
                 setHistory(prev => {
                     if (activeSessionId) return prev.map(s => s.id === activeSessionId ? { ...s, messages: finalMessages } : s);
-                    const newId = Date.now().toString(); setActiveSessionId(newId);
+                    const newId = Date.now().toString(); 
                     return [{ id: newId, title: input || '📎 Notes Analysis', date: 'Just now', messages: finalMessages, insights: null }, ...prev];
                 });
+                saveSessionToDB({ id: activeSessionId, title: input || '📎 Notes Analysis', messages: finalMessages, insights });
             }
         } catch (error) { setMessages(prev => [...prev, { role: 'error', content: `Error: ${error.message}`, timestamp: new Date().toISOString() }]); } finally { setIsProcessing(false); setCurrentStep(''); }
     };
@@ -911,9 +995,12 @@ CRITICAL MATH INSTRUCTION:
                                 <div style={{ fontSize: '11px', color: 'rgba(255, 255, 255, 0.4)', fontWeight: 600, letterSpacing: '1px', marginBottom: '16px', paddingLeft: '8px' }}>RECENT HISTORY</div>
                                 <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                                     {history.filter(h => h.title.toLowerCase().includes(searchQuery.toLowerCase())).map(item => (
-                                        <div key={item.id} onClick={() => loadSession(item.id)} style={{ padding: '14px 16px', background: activeSessionId === item.id ? 'rgba(255, 255, 255, 0.08)' : 'transparent', borderRadius: '16px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '16px', transition: 'background 0.2s', border: activeSessionId === item.id ? '1px solid rgba(255, 255, 255, 0.1)' : '1px solid transparent' }} onMouseOver={(e) => { if (activeSessionId !== item.id) e.currentTarget.style.background = 'rgba(255, 255, 255, 0.03)' }} onMouseOut={(e) => { if (activeSessionId !== item.id) e.currentTarget.style.background = 'transparent' }}>
+                                        <div key={item.id} onClick={() => loadSession(item.id)} style={{ position: 'relative', overflow: 'hidden', group: 'true', padding: '14px 16px', background: activeSessionId === item.id ? 'rgba(255, 255, 255, 0.08)' : 'transparent', borderRadius: '16px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '16px', transition: 'background 0.2s', border: activeSessionId === item.id ? '1px solid rgba(255, 255, 255, 0.1)' : '1px solid transparent' }} onMouseOver={(e) => { if (activeSessionId !== item.id) e.currentTarget.style.background = 'rgba(255, 255, 255, 0.03)'; e.currentTarget.querySelector('.delete-btn').style.opacity = '1'; }} onMouseOut={(e) => { if (activeSessionId !== item.id) e.currentTarget.style.background = 'transparent'; e.currentTarget.querySelector('.delete-btn').style.opacity = '0'; }}>
                                             <div style={{ width: '32px', height: '32px', borderRadius: '10px', background: 'rgba(255,255,255,0.05)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><Clock size={14} color="rgba(255, 255, 255, 0.6)" /></div>
                                             <div style={{ flex: 1, overflow: 'hidden' }}><div style={{ color: 'rgba(255, 255, 255, 0.9)', fontSize: '13px', fontWeight: 500, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', marginBottom: '4px' }}>{item.title}</div><div style={{ color: 'rgba(255, 255, 255, 0.4)', fontSize: '11px', fontWeight: 500 }}>{item.date}</div></div>
+                                            <button className="delete-btn" onClick={(e) => deleteSession(item.id, e)} style={{ opacity: 0, padding: '8px', background: 'transparent', border: 'none', color: '#ff4d4d', cursor: 'pointer', transition: 'opacity 0.2s' }}>
+                                                <Trash2 size={14} />
+                                            </button>
                                         </div>
                                     ))}
                                 </div>
@@ -1036,6 +1123,19 @@ CRITICAL MATH INSTRUCTION:
                                             <div style={{ width: '100%', padding: '16px 20px', background: 'transparent', border: '1px solid rgba(255, 255, 255, 0.1)', borderRadius: '16px', color: 'rgba(255,255,255,0.8)', fontSize: '15px', fontWeight: 500, boxSizing: 'border-box' }}>
                                                 {userProfile.email || 'Not provided'}
                                             </div>
+                                        </div>
+
+                                        <div>
+                                            <label style={{ fontSize: '11px', color: 'rgba(255,255,255,0.4)', letterSpacing: '1px', fontWeight: 600, marginBottom: '10px', display: 'block' }}>GROQ API KEY (OPTIONAL)</label>
+                                            <input
+                                                type="password"
+                                                placeholder="Enter your Groq API Key..."
+                                                value={userProfile.apiKey || ''}
+                                                onChange={e => setUserProfile({ ...userProfile, apiKey: e.target.value })}
+                                                style={{ width: '100%', padding: '16px 20px', background: 'rgba(0, 0, 0, 0.2)', border: '1px solid rgba(255, 255, 255, 0.08)', borderRadius: '16px', color: '#fff', outline: 'none', fontSize: '15px', transition: 'border 0.3s' }}
+                                                onFocus={(e) => e.target.style.border = '1px solid rgba(255, 255, 255, 0.2)'}
+                                                onBlur={(e) => e.target.style.border = '1px solid rgba(255, 255, 255, 0.08)'}
+                                            />
                                         </div>
 
 
