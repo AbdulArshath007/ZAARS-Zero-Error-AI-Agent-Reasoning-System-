@@ -210,8 +210,8 @@ apiRouter.post('/ai/chat', async (req, res) => {
 
   // Intercept ANY decommissioned Llama 3.2 vision models from cached clients
   if (model.includes('llama-3.2') && model.includes('vision')) {
-    console.log(`[BACKEND] Intercepting decommissioned model ${model} -> mapping to gemini-1.5-flash`);
-    model = 'gemini-1.5-flash';
+    console.log(`[BACKEND] Intercepting decommissioned model ${model} -> mapping to gemini-2.5-flash`);
+    model = 'gemini-2.5-flash';
   }
 
   console.log(`[BACKEND] AI Request for Model: ${model}`);

@@ -647,7 +647,7 @@ export default function App() {
                 // Determine model
                 const hasImage = chatHistory.some(msg => Array.isArray(msg.content) && msg.content.some(part => part.type === 'image_url'));
                 // Use Gemini for vision ALWAYS (due to Groq rotations); otherwise use preference
-                const model = hasImage ? "gemini-1.5-flash" : (preferredModel === 'gemini' ? "gemini-1.5-flash" : "llama-3.3-70b-versatile");
+                const model = hasImage ? "gemini-2.5-flash" : (preferredModel === 'gemini' ? "gemini-2.5-flash" : "llama-3.3-70b-versatile");
                 console.log(`[ZAARS] Dispatching to Model: ${model} (hasImage: ${hasImage}, preference: ${preferredModel})`);
 
                 // Format messages
@@ -1071,7 +1071,7 @@ CRITICAL INSTRUCTIONS for SIMPLE MODE:
                                         onClick={() => { setPreferredModel('gemini'); localStorage.setItem('zaars_model', 'gemini'); }}
                                         style={{ flex: 1, padding: '10px', border: 'none', borderRadius: '16px', fontSize: '11px', fontWeight: 600, cursor: 'pointer', background: preferredModel === 'gemini' ? 'rgba(252, 66, 255, 0.2)' : 'transparent', color: preferredModel === 'gemini' ? '#fc42ff' : 'rgba(255,255,255,0.4)', transition: 'all 0.2s' }}
                                     >
-                                        Gemini 1.5
+                                        Gemini 2.5
                                     </button>
                                     <button 
                                         onClick={() => { setPreferredModel('llama'); localStorage.setItem('zaars_model', 'llama'); }}
