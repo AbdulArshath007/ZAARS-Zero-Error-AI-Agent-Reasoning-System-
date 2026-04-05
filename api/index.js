@@ -14,6 +14,12 @@ app.use(cors());
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ limit: '50mb', extended: true }));
 
+const apiRouter = express.Router();
+app.use('/api', apiRouter);
+app.use('/', apiRouter);
+
+apiRouter.get('/ping', (req, res) => res.json({ status: 'ZAARS Engine Online', timestamp: new Date() }));
+
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
   ssl: { rejectUnauthorized: false }
@@ -52,7 +58,7 @@ const initDB = async () => {
 };
 initDB();
 
-app.post('/auth/register', async (req, res) => {
+apiRouter.post('/auth/register', async (req, res) => {
   const { username, password } = req.body;
   if (!username || !password) return res.status(400).json({ error: 'Missing username or password' });
   
@@ -74,7 +80,7 @@ app.post('/auth/register', async (req, res) => {
   }
 });
 
-app.post('/auth/login', async (req, res) => {
+apiRouter.post('/auth/login', async (req, res) => {
   const { username, password } = req.body;
   
   try {
@@ -92,7 +98,7 @@ app.post('/auth/login', async (req, res) => {
   }
 });
 
-app.post('/auth/google', async (req, res) => {
+apiRouter.post('/auth/google', async (req, res) => {
   const { credential } = req.body;
   try {
     const ticket = await googleClient.verifyIdToken({
@@ -133,7 +139,7 @@ const authenticateToken = (req, res, next) => {
   });
 };
 
-app.get('/user/sessions', authenticateToken, async (req, res) => {
+apiRouter.get('/user/sessions', authenticateToken, async (req, res) => {
   try {
     const result = await pool.query('SELECT * FROM sessions WHERE user_id = $1 ORDER BY created_at DESC', [req.user.id]);
     res.json(result.rows.map(row => ({
@@ -148,7 +154,7 @@ app.get('/user/sessions', authenticateToken, async (req, res) => {
   }
 });
 
-app.post('/user/sessions', authenticateToken, async (req, res) => {
+apiRouter.post('/user/sessions', authenticateToken, async (req, res) => {
   const { id, title, messages, insights } = req.body;
   try {
     if (id && !isNaN(id)) {
@@ -172,7 +178,7 @@ app.post('/user/sessions', authenticateToken, async (req, res) => {
   }
 });
 
-app.delete('/user/sessions/:id', authenticateToken, async (req, res) => {
+apiRouter.delete('/user/sessions/:id', authenticateToken, async (req, res) => {
   try {
     await pool.query('DELETE FROM sessions WHERE id = $1 AND user_id = $2', [req.params.id, req.user.id]);
     res.json({ success: true });
@@ -181,7 +187,7 @@ app.delete('/user/sessions/:id', authenticateToken, async (req, res) => {
   }
 });
 
-app.post('/user/update', authenticateToken, async (req, res) => {
+apiRouter.post('/user/update', authenticateToken, async (req, res) => {
   const { avatar_url, api_key } = req.body;
   try {
     if (avatar_url !== undefined && api_key !== undefined) {
@@ -198,7 +204,7 @@ app.post('/user/update', authenticateToken, async (req, res) => {
 });
 
 // AI Proxy Endpoint
-app.post('/api/ai/chat', async (req, res) => {
+apiRouter.post('/ai/chat', async (req, res) => {
   const { messages, model, response_format } = req.body;
   const apiKey = process.env.VITE_GROQ_API_KEY || process.env.GROQ_API_KEY;
 
@@ -231,6 +237,11 @@ app.post('/api/ai/chat', async (req, res) => {
     console.error("AI Proxy Error:", err);
     res.status(500).json({ error: err.message });
   }
+});
+
+// JSON Error Fallback
+app.use((req, res) => {
+    res.status(404).json({ error: `Not Found: ${req.url}` });
 });
 
 const PORT = process.env.PORT || 5000;
