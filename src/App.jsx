@@ -720,6 +720,35 @@ export default function App() {
         } catch (e) { console.error(e); } finally { setIsGeneratingInsights(false); }
     };
 
+    const compressImage = (file) => {
+        return new Promise((resolve) => {
+            const reader = new FileReader();
+            reader.readAsDataURL(file);
+            reader.onload = (event) => {
+                const img = new Image();
+                img.src = event.target.result;
+                img.onload = () => {
+                    const canvas = document.createElement('canvas');
+                    const MAX_WIDTH = 1200;
+                    const MAX_HEIGHT = 1200;
+                    let width = img.width;
+                    let height = img.height;
+                    if (width > height) {
+                        if (width > MAX_WIDTH) { height *= MAX_WIDTH / width; width = MAX_WIDTH; }
+                    } else {
+                        if (height > MAX_HEIGHT) { width *= MAX_HEIGHT / height; height = MAX_HEIGHT; }
+                    }
+                    canvas.width = width;
+                    canvas.height = height;
+                    const ctx = canvas.getContext('2d');
+                    ctx.drawImage(img, 0, 0, width, height);
+                    const dataUrl = canvas.toDataURL('image/jpeg', 0.7);
+                    resolve({ base64: dataUrl.split(',')[1], preview: dataUrl });
+                };
+            };
+        });
+    };
+
     const handleFileUpload = async (e) => {
         const files = Array.from(e.target.files || []); if (files.length === 0) return;
         
@@ -731,9 +760,8 @@ export default function App() {
             const extension = fileName.split('.').pop().toLowerCase();
 
             if (fileType.startsWith('image/')) {
-                const reader = new FileReader();
-                reader.onload = () => { setUploadedFiles(prev => [...prev, { id: Date.now() + Math.random(), type: 'image', name: fileName, base64: reader.result.split(',')[1], mimeType: fileType, preview: reader.result }]); };
-                reader.readAsDataURL(file);
+                const { base64, preview } = await compressImage(file);
+                setUploadedFiles(prev => [...prev, { id: Date.now() + Math.random(), type: 'image', name: fileName, base64, mimeType: 'image/jpeg', preview }]);
             } else if (extension === 'pdf') {
                 const reader = new FileReader();
                 reader.onload = async () => {
