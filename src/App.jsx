@@ -644,7 +644,7 @@ export default function App() {
             try {
                 // Determine model
                 const hasImage = chatHistory.some(msg => Array.isArray(msg.content) && msg.content.some(part => part.type === 'image_url'));
-                const model = hasImage ? "llama-3.2-11b-vision-preview" : "llama-3.3-70b-versatile";
+                const model = hasImage ? "llama-3.2-90b-vision-preview" : "llama-3.3-70b-versatile";
 
                 // Format messages
                 const messages = [];
