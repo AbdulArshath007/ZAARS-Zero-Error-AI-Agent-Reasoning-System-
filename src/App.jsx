@@ -34,7 +34,7 @@ import 'katex/dist/katex.min.css';
 import mammoth from 'mammoth';
 import * as pdfjsLib from 'pdfjs-dist';
 
-pdfjsLib.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.js`;
+pdfjsLib.GlobalWorkerOptions.workerSrc = '/pdf.worker.min.mjs';
 
 
 // ── Inlined Magnet (Interaction Component) ───────────────────────────────────
@@ -54,7 +54,11 @@ function Magnet({
     const magnetRef = useRef(null);
 
     useEffect(() => {
-        if (disabled) { setPosition({ x: 0, y: 0 }); return; }
+        if (disabled || window.innerWidth <= 768) { 
+            setPosition({ x: 0, y: 0 }); 
+            setIsActive(false);
+            return; 
+        }
         const handleMouseMove = e => {
             if (!magnetRef.current) return;
             const { left, top, width, height } = magnetRef.current.getBoundingClientRect();
@@ -66,13 +70,15 @@ function Magnet({
                 setIsActive(true);
                 setPosition({ x: (e.clientX - centerX) / magnetStrength, y: (e.clientY - centerY) / magnetStrength });
             } else {
-                setIsActive(false);
-                setPosition({ x: 0, y: 0 });
+                if (isActive) {
+                    setIsActive(false);
+                    setPosition({ x: 0, y: 0 });
+                }
             }
         };
         window.addEventListener('mousemove', handleMouseMove);
         return () => window.removeEventListener('mousemove', handleMouseMove);
-    }, [padding, disabled, magnetStrength]);
+    }, [padding, disabled, magnetStrength, isActive]);
 
     return (
         <div ref={magnetRef} className={wrapperClassName} style={{ position: 'relative', display: 'inline-block' }} {...props}>
@@ -414,7 +420,7 @@ export default function App() {
         setIsAuthLoading(true); setAuthError('');
         try {
             const apiBase = (window.location.hostname === 'localhost' ? 'http://localhost:5000' : window.location.origin);
-            const endpoint = isRegistering ? '/api/auth/register' : '/api/auth/login';
+            const endpoint = isRegistering ? '/auth/register' : '/auth/login';
             const res = await fetch(`${apiBase}${endpoint}`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -450,7 +456,7 @@ export default function App() {
         setIsAuthLoading(true); setAuthError('');
         try {
             const apiBase = (window.location.hostname === 'localhost' ? 'http://localhost:5000' : window.location.origin);
-            const res = await fetch(`${apiBase}/api/auth/google`, {
+            const res = await fetch(`${apiBase}/auth/google`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ credential: credentialResponse.credential })
@@ -489,7 +495,7 @@ export default function App() {
     const syncHistory = async (token) => {
         try {
             const apiBase = (window.location.hostname === 'localhost' ? 'http://localhost:5000' : window.location.origin);
-            const res = await fetch(`${apiBase}/api/user/sessions`, {
+            const res = await fetch(`${apiBase}/user/sessions`, {
                 headers: { 'Authorization': `Bearer ${token}` }
             });
             const data = await res.json();
@@ -502,7 +508,7 @@ export default function App() {
         if (!token || isPrivateMode) return;
         try {
             const apiBase = (window.location.hostname === 'localhost' ? 'http://localhost:5000' : window.location.origin);
-            const res = await fetch(`${apiBase}/api/user/sessions`, {
+            const res = await fetch(`${apiBase}/user/sessions`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
                 body: JSON.stringify(sessionData)
@@ -521,7 +527,7 @@ export default function App() {
         if (!token) return;
         try {
             const apiBase = (window.location.hostname === 'localhost' ? 'http://localhost:5000' : window.location.origin);
-            const res = await fetch(`${apiBase}/api/user/sessions/${id}`, {
+            const res = await fetch(`${apiBase}/user/sessions/${id}`, {
                 method: 'DELETE',
                 headers: { 'Authorization': `Bearer ${token}` }
             });
@@ -801,17 +807,43 @@ export default function App() {
                 const reader = new FileReader();
                 reader.onload = async () => {
                     try {
-                        const loadingTask = pdfjsLib.getDocument({ data: new Uint8Array(reader.result) });
+                        const pdfData = new Uint8Array(reader.result);
+                        const loadingTask = pdfjsLib.getDocument({ data: pdfData });
                         const pdf = await loadingTask.promise;
-                        let text = "";
-                        for (let i = 1; i <= Math.min(pdf.numPages, 10); i++) {
+                        const numPages = pdf.numPages;
+
+                        // Extract text (up to 15 pages)
+                        let text = `[PDF Document: ${fileName} — ${numPages} page${numPages > 1 ? 's' : ''}]\n`;
+                        for (let i = 1; i <= Math.min(numPages, 15); i++) {
                             const page = await pdf.getPage(i);
                             const content = await page.getTextContent();
-                            text += content.items.map(item => item.str).join(' ') + "\n";
+                            text += `\n--- Page ${i} ---\n` + content.items.map(item => item.str).join(' ');
                         }
-                        if (pdf.numPages > 10) text += "\n... (more pages)";
-                        setUploadedFiles(prev => [...prev, { id: Date.now() + Math.random(), type: 'pdf', name: fileName, content: text, preview: null }]);
-                    } catch (err) { console.error(err); alert(`Failed to parse PDF: ${fileName}`); }
+                        if (numPages > 15) text += `\n\n... (${numPages - 15} more pages not shown)`;
+
+                        // Render page 1 as a thumbnail
+                        const firstPage = await pdf.getPage(1);
+                        const viewport = firstPage.getViewport({ scale: 0.5 });
+                        const canvas = document.createElement('canvas');
+                        canvas.width = viewport.width;
+                        canvas.height = viewport.height;
+                        const ctx = canvas.getContext('2d');
+                        await firstPage.render({ canvasContext: ctx, viewport }).promise;
+                        const thumbnail = canvas.toDataURL('image/jpeg', 0.8);
+
+                        setUploadedFiles(prev => [...prev, {
+                            id: Date.now() + Math.random(),
+                            type: 'pdf',
+                            name: fileName,
+                            content: text,
+                            numPages,
+                            thumbnail,
+                            preview: null
+                        }]);
+                    } catch (err) {
+                        console.error('PDF parse error:', err);
+                        alert(`Failed to read PDF: ${fileName}\n\nMake sure it's not password-protected.`);
+                    }
                 };
                 reader.readAsArrayBuffer(file);
             } else if (extension === 'docx') {
@@ -1390,18 +1422,31 @@ CRITICAL INSTRUCTIONS for SIMPLE MODE:
                                         {uploadedFiles.length > 0 && (
                                             <div style={{ display: 'flex', gap: '12px', padding: '10px', overflowX: 'auto', width: '100%', maxWidth: '860px', scrollbarWidth: 'none' }}>
                                                 {uploadedFiles.map(file => (
-                                                    <div key={file.id} style={{ flexShrink: 0, display: 'flex', alignItems: 'center', gap: '12px', padding: '8px 12px', background: 'rgba(255, 255, 255, 0.05)', backdropFilter: 'blur(16px)', border: '1px solid rgba(255, 255, 255, 0.1)', borderRadius: '16px' }}>
+                                                    <div key={file.id} style={{ flexShrink: 0, display: 'flex', alignItems: 'center', gap: '10px', padding: '8px 12px', background: 'rgba(255, 255, 255, 0.05)', backdropFilter: 'blur(16px)', border: '1px solid rgba(255, 255, 255, 0.1)', borderRadius: '16px', maxWidth: '200px' }}>
+                                                        {/* Thumbnail */}
                                                         {file.type === 'image' ? (
-                                                            <img src={file.preview} alt="preview" style={{ width: '32px', height: '32px', objectFit: 'cover', borderRadius: '8px' }} />
+                                                            <img src={file.preview} alt="preview" style={{ width: '36px', height: '36px', objectFit: 'cover', borderRadius: '8px', flexShrink: 0 }} />
+                                                        ) : file.type === 'pdf' && file.thumbnail ? (
+                                                            <div style={{ position: 'relative', flexShrink: 0 }}>
+                                                                <img src={file.thumbnail} alt="pdf preview" style={{ width: '36px', height: '44px', objectFit: 'cover', borderRadius: '6px', border: '1px solid rgba(255,255,255,0.15)' }} />
+                                                                <div style={{ position: 'absolute', bottom: '2px', right: '2px', background: 'rgba(255,60,60,0.9)', borderRadius: '3px', fontSize: '6px', fontWeight: 800, color: '#fff', padding: '1px 3px', letterSpacing: '0.5px' }}>PDF</div>
+                                                            </div>
                                                         ) : (
-                                                            <div style={{ width: '32px', height: '32px', background: 'rgba(255,255,255,0.1)', borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                                                                <Activity size={16} color="#fc42ff" />
+                                                            <div style={{ width: '36px', height: '36px', background: file.type === 'pdf' ? 'rgba(255,80,80,0.15)' : 'rgba(255,255,255,0.1)', border: file.type === 'pdf' ? '1px solid rgba(255,80,80,0.3)' : '1px solid transparent', borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                                                                <Activity size={16} color={file.type === 'pdf' ? '#ff5050' : '#fc42ff'} />
                                                             </div>
                                                         )}
-                                                        <div style={{ display: 'flex', flexDirection: 'column', maxWidth: '120px' }}>
-                                                            <span style={{ color: '#fff', fontSize: '11px', fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{file.name}</span>
+                                                        {/* Info */}
+                                                        <div style={{ display: 'flex', flexDirection: 'column', minWidth: 0, flex: 1 }}>
+                                                            <span style={{ color: '#fff', fontSize: '11px', fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{file.name}</span>
+                                                            {file.type === 'pdf' && file.numPages && (
+                                                                <span style={{ color: 'rgba(255,255,255,0.45)', fontSize: '10px', marginTop: '2px' }}>{file.numPages} page{file.numPages > 1 ? 's' : ''}</span>
+                                                            )}
+                                                            {file.type === 'image' && (
+                                                                <span style={{ color: 'rgba(255,255,255,0.45)', fontSize: '10px', marginTop: '2px' }}>Image</span>
+                                                            )}
                                                         </div>
-                                                        <button onClick={() => setUploadedFiles(prev => prev.filter(f => f.id !== file.id))} style={{ background: 'rgba(255,255,255,0.1)', border: 'none', borderRadius: '50%', width: '20px', height: '20px', color: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><X size={12} /></button>
+                                                        <button onClick={() => setUploadedFiles(prev => prev.filter(f => f.id !== file.id))} style={{ background: 'rgba(255,255,255,0.1)', border: 'none', borderRadius: '50%', width: '20px', height: '20px', color: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><X size={12} /></button>
                                                     </div>
                                                 ))}
                                             </div>
@@ -1521,10 +1566,28 @@ CRITICAL INSTRUCTIONS for SIMPLE MODE:
                 max-width: calc(100% - 32px) !important;
             }
 
-            /* Prevent horizontal scroll */
-            body { overflow-x: hidden !important; }
-            .katex-display { padding: 12px !important; overflow-x: auto; }
-            .katex-display .katex { font-size: 0.95em !important; }
+            /* Glassmorphism optimizations */
+            .sidebar-overlay, .mobile-input-container {
+                backdrop-filter: blur(20px) !important;
+                -webkit-backdrop-filter: blur(20px) !important;
+            }
+
+            /* Scroll performance */
+            .message-item {
+                content-visibility: auto;
+                contain-intrinsic-size: 1px 100px;
+            }
+
+            /* Reduced animations */
+            * { transition-duration: 0.25s !important; }
+        }
+
+        /* Prevent horizontal scroll */
+        body { 
+            overflow-x: hidden !important; 
+            width: 100vw;
+            position: fixed; /* Prevent rubber banding on some mobile browsers */
+            overflow-y: auto;
         }
 
         /* Touch devices: disable magnetic hover effects */
