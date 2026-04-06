@@ -356,6 +356,13 @@ export default function App() {
     const [isSidebarOpen, setIsSidebarOpen] = useState(false);
     const [searchQuery, setSearchQuery] = useState('');
     const [isPrivateMode, setIsPrivateMode] = useState(false);
+    const [isMobile, setIsMobile] = useState(() => window.innerWidth <= 768);
+
+    useEffect(() => {
+        const handleResize = () => setIsMobile(window.innerWidth <= 768);
+        window.addEventListener('resize', handleResize);
+        return () => window.removeEventListener('resize', handleResize);
+    }, []);
 
     const [history, setHistory] = useState([]);
     const [activeSessionId, setActiveSessionId] = useState(null);
@@ -1027,7 +1034,7 @@ CRITICAL INSTRUCTIONS for SIMPLE MODE:
                     )}
 
                     {/* Sidebar */}
-                    <div className={`sidebar-overlay ${isSidebarOpen ? 'sidebar-open' : ''}`} style={{ position: 'absolute', top: 0, left: isSidebarOpen ? 0 : '-320px', width: '320px', height: '100vh', background: 'rgba(10, 10, 10, 0.75)', backdropFilter: 'blur(40px)', WebkitBackdropFilter: 'blur(40px)', borderRight: '1px solid rgba(255, 255, 255, 0.08)', boxShadow: '24px 0 64px rgba(0, 0, 0, 0.5)', transition: 'left 0.5s cubic-bezier(0.16, 1, 0.3, 1)', zIndex: 100, display: 'flex', flexDirection: 'column', padding: '32px 24px' }}>
+                    <div className={`sidebar-overlay ${isSidebarOpen ? 'sidebar-open' : ''}`} style={{ position: 'fixed', top: 0, left: 0, width: '300px', height: '100vh', background: 'rgba(10, 10, 10, 0.85)', backdropFilter: 'blur(40px)', WebkitBackdropFilter: 'blur(40px)', borderRight: '1px solid rgba(255, 255, 255, 0.08)', boxShadow: '24px 0 64px rgba(0, 0, 0, 0.5)', transform: isSidebarOpen ? 'translateX(0)' : 'translateX(-100%)', transition: 'transform 0.45s cubic-bezier(0.16, 1, 0.3, 1)', zIndex: 1000, display: 'flex', flexDirection: 'column', padding: '32px 24px' }}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '40px' }}>
                             <h2 style={{ color: '#fff', fontSize: '14px', fontWeight: 600, margin: 0, letterSpacing: '2px', opacity: 0.8 }}>DASHBOARD</h2>
                             <button onClick={() => setIsSidebarOpen(false)} style={{ background: 'none', border: 'none', color: '#fff', cursor: 'pointer', opacity: 0.4, transition: 'opacity 0.2s' }} onMouseOver={e => e.currentTarget.style.opacity = 1} onMouseOut={e => e.currentTarget.style.opacity = 0.4}><X size={20} /></button>
@@ -1129,59 +1136,53 @@ CRITICAL INSTRUCTIONS for SIMPLE MODE:
                         </div>
                     </div>
 
-                    <div style={{ position: 'relative', zIndex: 10, width: '100%', height: '100%', display: 'flex', flexDirection: 'column', transition: 'all 0.4s cubic-bezier(0.16, 1, 0.3, 1)', opacity: (isSidebarOpen && window.innerWidth <= 768) ? 0.3 : 1, filter: (isSidebarOpen && window.innerWidth <= 768) ? 'blur(8px)' : 'none', pointerEvents: (isSidebarOpen && window.innerWidth <= 768) ? 'none' : 'auto' }}>
+                    {/* Mobile sidebar backdrop */}
+                    {isMobile && isSidebarOpen && (
+                        <div onClick={() => setIsSidebarOpen(false)} style={{ position: 'fixed', inset: 0, zIndex: 999, background: 'rgba(0,0,0,0.5)', backdropFilter: 'blur(4px)' }} />
+                    )}
+                    <div style={{ position: 'relative', zIndex: 10, width: '100%', height: '100%', display: 'flex', flexDirection: 'column', transition: 'all 0.4s cubic-bezier(0.16, 1, 0.3, 1)', opacity: (isSidebarOpen && isMobile) ? 0.3 : 1, filter: (isSidebarOpen && isMobile) ? 'blur(8px)' : 'none', pointerEvents: (isSidebarOpen && isMobile) ? 'none' : 'auto' }}>
 
                         <div className="mobile-header" style={{ padding: '32px 40px 16px', position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                            <button className="mobile-btn" onClick={() => setIsSidebarOpen(true)} style={{ position: 'absolute', left: '40px', background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '12px', color: '#fff', cursor: 'pointer', padding: '10px', transition: 'all 0.2s', display: isSidebarOpen ? 'none' : 'flex' }} onMouseOver={(e) => e.currentTarget.style.background = 'rgba(255,255,255,0.08)'} onMouseOut={(e) => e.currentTarget.style.background = 'rgba(255,255,255,0.03)'}>
+                            <button className="mobile-menu-btn" onClick={() => setIsSidebarOpen(true)} style={{ position: 'absolute', left: isMobile ? '16px' : '40px', background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '12px', color: '#fff', cursor: 'pointer', padding: '10px', transition: 'all 0.2s', display: 'flex', alignItems: 'center', justifyContent: 'center' }} onMouseOver={(e) => e.currentTarget.style.background = 'rgba(255,255,255,0.08)'} onMouseOut={(e) => e.currentTarget.style.background = 'rgba(255,255,255,0.03)'}>
                                 <Menu size={20} />
                             </button>
 
                             <div className="mobile-title-container" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', cursor: 'pointer' }} onClick={startNewChat}>
                                 <h1 className="mobile-title" style={{ margin: 0, fontSize: '28px', fontWeight: 400, fontFamily: "'Playfair Display', serif", color: '#fff', letterSpacing: '12px', textTransform: 'uppercase' }}>ZAARS</h1>
-                                 {isPrivateMode ? (
+                                {isPrivateMode ? (
                                     <div style={{ padding: '4px 12px', background: 'rgba(128, 0, 128, 0.2)', border: '1px solid rgba(128, 0, 128, 0.4)', borderRadius: '12px', color: '#d18ced', fontSize: '9px', fontWeight: 600, letterSpacing: '3px', marginTop: '8px' }}>
                                         PRIVATE WINDOW
                                     </div>
                                 ) : (
                                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '4px' }}>
-                                        <div style={{ fontSize: '8px', fontFamily: "'Playfair Display', serif", color: 'rgba(255, 255, 255, 0.5)', letterSpacing: '4px' }}>ZERO-ERROR AI AGENT REASONING SYSTEM</div>
+                                        {!isMobile && <div style={{ fontSize: '8px', fontFamily: "'Playfair Display', serif", color: 'rgba(255, 255, 255, 0.5)', letterSpacing: '4px' }}>ZERO-ERROR AI AGENT REASONING SYSTEM</div>}
                                         <div style={{ padding: '2px 6px', background: 'rgba(252, 66, 255, 0.1)', border: '1px solid rgba(252, 66, 255, 0.3)', borderRadius: '6px', color: '#fc42ff', fontSize: '7px', fontWeight: 800 }}>v1.0.4</div>
                                     </div>
                                 )}
                             </div>
 
-                            {/* Right Header Icons - REMOVED mobile-hide for visibility */}
-                            <div style={{ position: 'absolute', right: '40px', display: 'flex', alignItems: 'center', gap: '16px' }}>
-                                {/* Header Model Switcher (Visible on Desktop/Large screens) */}
-                                <div className="mobile-hide" style={{ display: 'flex', background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)', padding: '2px', borderRadius: '14px', gap: '2px' }}>
-                                    <button 
-                                        onClick={() => { setPreferredModel('gemini'); localStorage.setItem('zaars_model', 'gemini'); }}
-                                        style={{ padding: '6px 12px', border: 'none', borderRadius: '11px', fontSize: '10px', fontWeight: 600, cursor: 'pointer', background: preferredModel === 'gemini' ? 'rgba(252, 66, 255, 0.2)' : 'transparent', color: preferredModel === 'gemini' ? '#fc42ff' : 'rgba(255,255,255,0.4)', transition: 'all 0.2s', letterSpacing: '1px' }}
-                                    >
-                                        GEMINI
-                                    </button>
-                                    <button 
-                                        onClick={() => { setPreferredModel('llama'); localStorage.setItem('zaars_model', 'llama'); }}
-                                        style={{ padding: '6px 12px', border: 'none', borderRadius: '11px', fontSize: '10px', fontWeight: 600, cursor: 'pointer', background: preferredModel === 'llama' ? 'rgba(255, 255, 255, 0.1)' : 'transparent', color: preferredModel === 'llama' ? '#fff' : 'rgba(255,255,255,0.4)', transition: 'all 0.2s', letterSpacing: '1px' }}
-                                    >
-                                        LLAMA
-                                    </button>
-                                </div>
+                            {/* Right Header Icons */}
+                            <div style={{ position: 'absolute', right: isMobile ? '16px' : '40px', display: 'flex', alignItems: 'center', gap: isMobile ? '8px' : '16px' }}>
+                                {/* Header Model Switcher — desktop only */}
+                                {!isMobile && <div style={{ display: 'flex', background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)', padding: '2px', borderRadius: '14px', gap: '2px' }}>
+                                    <button onClick={() => { setPreferredModel('gemini'); localStorage.setItem('zaars_model', 'gemini'); }} style={{ padding: '6px 12px', border: 'none', borderRadius: '11px', fontSize: '10px', fontWeight: 600, cursor: 'pointer', background: preferredModel === 'gemini' ? 'rgba(252, 66, 255, 0.2)' : 'transparent', color: preferredModel === 'gemini' ? '#fc42ff' : 'rgba(255,255,255,0.4)', transition: 'all 0.2s', letterSpacing: '1px' }}>GEMINI</button>
+                                    <button onClick={() => { setPreferredModel('llama'); localStorage.setItem('zaars_model', 'llama'); }} style={{ padding: '6px 12px', border: 'none', borderRadius: '11px', fontSize: '10px', fontWeight: 600, cursor: 'pointer', background: preferredModel === 'llama' ? 'rgba(255, 255, 255, 0.1)' : 'transparent', color: preferredModel === 'llama' ? '#fff' : 'rgba(255,255,255,0.4)', transition: 'all 0.2s', letterSpacing: '1px' }}>LLAMA</button>
+                                </div>}
 
                                 <button
                                     onClick={() => setCurrentView('profile')}
-                                    style={{ display: 'flex', alignItems: 'center', gap: '10px', background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)', padding: '6px 14px 6px 6px', borderRadius: '24px', cursor: 'pointer', color: '#fff', transition: 'all 0.2s' }}
+                                    style={{ display: 'flex', alignItems: 'center', gap: '8px', background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)', padding: isMobile ? '8px' : '6px 14px 6px 6px', borderRadius: '24px', cursor: 'pointer', color: '#fff', transition: 'all 0.2s' }}
                                     onMouseOver={(e) => e.currentTarget.style.background = 'rgba(255,255,255,0.08)'}
                                     onMouseOut={(e) => e.currentTarget.style.background = 'rgba(255,255,255,0.03)'}
                                 >
                                     {userProfile.avatar ? (
-                                        <img src={userProfile.avatar} style={{ width: '24px', height: '24px', borderRadius: '50%', objectFit: 'cover' }} alt="profile" />
+                                        <img src={userProfile.avatar} style={{ width: '26px', height: '26px', borderRadius: '50%', objectFit: 'cover' }} alt="profile" />
                                     ) : (
-                                        <div style={{ width: '24px', height: '24px', borderRadius: '50%', background: '#333', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontSize: '11px', fontWeight: 600 }}>
+                                        <div style={{ width: '26px', height: '26px', borderRadius: '50%', background: '#333', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontSize: '11px', fontWeight: 600 }}>
                                             {userProfile.name.charAt(0).toUpperCase()}
                                         </div>
                                     )}
-                                    <span style={{ fontSize: '13px', fontWeight: 500 }}>{userProfile.name.split(' ')[0]}</span>
+                                    {!isMobile && <span style={{ fontSize: '13px', fontWeight: 500 }}>{userProfile.name.split(' ')[0]}</span>}
                                 </button>
                                 <button onClick={togglePrivateMode} style={{ background: isPrivateMode ? 'rgba(128, 0, 128, 0.2)' : 'rgba(255,255,255,0.03)', border: isPrivateMode ? '1px solid rgba(128, 0, 128, 0.4)' : '1px solid rgba(255,255,255,0.08)', borderRadius: '16px', color: isPrivateMode ? '#d18ced' : '#fff', cursor: 'pointer', transition: 'all 0.3s ease', padding: '10px' }} onMouseOver={(e) => !isPrivateMode && (e.currentTarget.style.background = 'rgba(255,255,255,0.08)')} onMouseOut={(e) => !isPrivateMode && (e.currentTarget.style.background = 'rgba(255,255,255,0.03)')}>
                                     <MessageSquareDashed size={20} />
@@ -1483,24 +1484,42 @@ CRITICAL INSTRUCTIONS for SIMPLE MODE:
         .katex { font-size: 1.1em; }
 
         @media (max-width: 768px) {
-            .sidebar-overlay { 
-                position: fixed !important; 
-                z-index: 1000 !important; 
-                width: 280px !important; 
-                transform: translateX(-100%);
-                transition: transform 0.4s cubic-bezier(0.16, 1, 0.3, 1) !important;
-            }
-            .sidebar-open { transform: translateX(0) !important; }
-            .mobile-hide { display: none !important; }
-            .mobile-header { padding: 20px 24px !important; }
-            .mobile-title { font-size: 20px !important; letter-spacing: 6px !important; }
-            .mobile-dock { padding: 0 16px 24px !important; }
-            .mobile-input-container { padding: 8px 10px !important; border-radius: 24px !important; }
-            .mobile-btn { padding: 10px !important; }
+            /* Header */
+            .mobile-header { padding: 16px !important; }
+            .mobile-title { font-size: 22px !important; letter-spacing: 6px !important; }
+            .mobile-menu-btn { display: flex !important; }
+
+            /* Sidebar */
+            .sidebar-overlay { width: 280px !important; }
+
+            /* Input dock */
+            .mobile-dock { padding: 0 12px 20px !important; }
+            .mobile-input-container { padding: 8px 10px !important; border-radius: 24px !important; gap: 6px !important; }
             .mobile-mode-btn { display: none !important; }
-            .mobile-refine-btn { padding: 8px 14px !important; font-size: 11px !important; }
+            .mobile-refine-btn { padding: 8px 12px !important; font-size: 11px !important; }
+
+            /* Messages */
+            .math-container { font-size: 14px !important; }
             .message-text { font-size: 14px !important; }
-            .profile-card { padding: 24px !important; border-radius: 24px !important; }
+
+            /* Profile */
+            .profile-card { 
+                padding: 24px !important; 
+                border-radius: 24px !important;
+                margin: 16px !important;
+                max-width: calc(100% - 32px) !important;
+            }
+
+            /* Prevent horizontal scroll */
+            body { overflow-x: hidden !important; }
+            .katex-display { padding: 12px !important; overflow-x: auto; }
+            .katex-display .katex { font-size: 0.95em !important; }
+        }
+
+        /* Touch devices: disable magnetic hover effects */
+        @media (hover: none) {
+            * { -webkit-tap-highlight-color: transparent; }
+            input, textarea, select { font-size: 16px !important; } /* Prevent iOS zoom on focus */
         }
       `}</style>
         </div>
