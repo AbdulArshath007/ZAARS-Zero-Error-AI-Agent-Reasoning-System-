@@ -1407,35 +1407,46 @@ CRITICAL INSTRUCTIONS for SIMPLE MODE:
                                             </div>
                                         )}
 
-                                        <div className="mobile-input-container" style={{ display: 'flex', gap: '12px', alignItems: 'center', background: 'rgba(0, 0, 0, 0.4)', backdropFilter: 'blur(40px) saturate(1.5)', WebkitBackdropFilter: 'blur(40px) saturate(1.5)', border: '1px solid rgba(255, 255, 255, 0.12)', boxShadow: '0 24px 48px rgba(0, 0, 0, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.1)', borderRadius: '32px', padding: '10px 14px', width: '100%', boxSizing: 'border-box' }}>
+                                        {/* Action chips row — sits above the input bar */}
+                                        <div style={{ display: 'flex', gap: '8px', alignItems: 'center', paddingLeft: '4px', flexWrap: 'wrap' }}>
+                                            {/* Mode toggle chip */}
+                                            <button
+                                                onClick={() => setMode(prev => prev === 'reasoning' ? 'simple' : 'reasoning')}
+                                                disabled={isProcessing || isClarifying}
+                                                title="Switch Mode"
+                                                style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '7px 14px', background: mode === 'reasoning' ? 'rgba(180, 100, 255, 0.15)' : 'rgba(255,255,255,0.06)', border: mode === 'reasoning' ? '1px solid rgba(180, 100, 255, 0.35)' : '1px solid rgba(255,255,255,0.1)', borderRadius: '20px', color: mode === 'reasoning' ? '#fc42ff' : 'rgba(255,255,255,0.7)', fontSize: '12px', fontWeight: 600, cursor: isProcessing || isClarifying ? 'default' : 'pointer', transition: 'all 0.25s ease', whiteSpace: 'nowrap', letterSpacing: '0.3px' }}
+                                            >
+                                                {mode === 'reasoning' ? <Brain size={13} /> : <Zap size={13} />}
+                                                {mode === 'reasoning' ? 'Reasoning' : 'Simple'}
+                                            </button>
+
+                                            {/* Refine chip */}
+                                            <button
+                                                onClick={handleClarify}
+                                                disabled={!input.trim() || isProcessing || isClarifying}
+                                                title="Auto-Refine Query"
+                                                style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '7px 14px', background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '20px', color: '#fff', fontSize: '12px', fontWeight: 600, cursor: input.trim() && !isProcessing && !isClarifying ? 'pointer' : 'default', opacity: input.trim() && !isProcessing && !isClarifying ? 1 : 0.35, transition: 'all 0.25s ease', whiteSpace: 'nowrap' }}
+                                            >
+                                                {isClarifying ? <Loader2 size={13} style={{ animation: 'spin 1s linear infinite' }} /> : <Sparkles size={13} />}
+                                                Refine
+                                            </button>
+                                        </div>
+
+                                        {/* Input bar — clean, minimal */}
+                                        <div className="mobile-input-container" style={{ display: 'flex', gap: '10px', alignItems: 'center', background: 'rgba(0, 0, 0, 0.4)', backdropFilter: 'blur(40px) saturate(1.5)', WebkitBackdropFilter: 'blur(40px) saturate(1.5)', border: '1px solid rgba(255, 255, 255, 0.12)', boxShadow: '0 24px 48px rgba(0, 0, 0, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.1)', borderRadius: '32px', padding: '10px 14px', width: '100%', boxSizing: 'border-box' }}>
 
                                             <input ref={fileInputRef} type="file" multiple accept="image/*,.pdf,.docx,.txt" onChange={handleFileUpload} style={{ display: 'none' }} />
 
                                             <Magnet padding={50} magnetStrength={-3} disabled={isProcessing}>
-                                                <button onClick={() => fileInputRef.current?.click()} disabled={isProcessing} title="Attach files" style={{ padding: '12px', background: uploadedFiles.length > 0 ? 'rgba(180, 100, 255, 0.2)' : 'rgba(255,255,255,0.05)', border: uploadedFiles.length > 0 ? '1px solid rgba(180, 100, 255, 0.3)' : '1px solid transparent', cursor: isProcessing ? 'default' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', opacity: isProcessing ? 0.3 : 1, transition: 'all 0.3s ease', borderRadius: '50%' }}>
+                                                <button onClick={() => fileInputRef.current?.click()} disabled={isProcessing} title="Attach files" style={{ padding: '12px', background: uploadedFiles.length > 0 ? 'rgba(180, 100, 255, 0.2)' : 'rgba(255,255,255,0.05)', border: uploadedFiles.length > 0 ? '1px solid rgba(180, 100, 255, 0.3)' : '1px solid transparent', cursor: isProcessing ? 'default' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', opacity: isProcessing ? 0.3 : 1, transition: 'all 0.3s ease', borderRadius: '50%', flexShrink: 0 }}>
                                                     <Plus size={20} color={uploadedFiles.length > 0 ? '#fc42ff' : '#fff'} />
                                                 </button>
                                             </Magnet>
 
-                                            <input type="text" value={input} onChange={(e) => setInput(e.target.value)} onKeyPress={(e) => e.key === 'Enter' && handleSend()} placeholder={uploadedFiles.length > 0 ? `Ask about ${uploadedFiles.length} files...` : "Message ZAARS..."} disabled={isProcessing || isClarifying} style={{ flex: 1, padding: '12px 16px', background: 'transparent', border: 'none', color: '#fff', outline: 'none', fontSize: '15px', fontWeight: 400 }} />
-
-                                            <Magnet padding={60} magnetStrength={-3} disabled={isProcessing || isClarifying}>
-                                                <button className="mobile-mode-btn" onClick={() => setMode(prev => prev === 'reasoning' ? 'simple' : 'reasoning')} disabled={isProcessing || isClarifying} title={`Switch Mode`} style={{ padding: '12px 20px', background: mode === 'reasoning' ? 'rgba(180, 100, 255, 0.15)' : 'transparent', border: mode === 'reasoning' ? '1px solid rgba(180, 100, 255, 0.3)' : '1px solid transparent', borderRadius: '24px', color: mode === 'reasoning' ? '#fc42ff' : 'rgba(255,255,255,0.6)', fontSize: '13px', fontWeight: 600, cursor: isProcessing || isClarifying ? 'default' : 'pointer', display: 'flex', alignItems: 'center', gap: '8px', transition: 'all 0.3s ease', whiteSpace: 'nowrap' }}>
-                                                    {mode === 'reasoning' ? <Brain size={16} /> : <Zap size={16} />}
-                                                    {mode === 'reasoning' ? 'Reasoning' : 'Simple'}
-                                                </button>
-                                            </Magnet>
-
-                                            <Magnet padding={60} magnetStrength={-3} disabled={!input.trim() || isProcessing || isClarifying}>
-                                                <button className="mobile-refine-btn" onClick={handleClarify} disabled={!input.trim() || isProcessing || isClarifying} title="Auto-Refine Query" style={{ padding: '12px 20px', background: 'rgba(255, 255, 255, 0.08)', border: '1px solid rgba(255, 255, 255, 0.05)', borderRadius: '24px', color: '#fff', fontSize: '13px', fontWeight: 600, cursor: input.trim() && !isProcessing && !isClarifying ? 'pointer' : 'default', display: 'flex', alignItems: 'center', gap: '8px', opacity: input.trim() && !isProcessing && !isClarifying ? 1 : 0.3, transition: 'all 0.3s ease', whiteSpace: 'nowrap' }}>
-                                                    {isClarifying ? <Loader2 size={16} style={{ animation: 'spin 1s linear infinite' }} /> : <Sparkles size={16} />}
-                                                    <span className="mobile-hide">Refine</span>
-                                                </button>
-                                            </Magnet>
-
+                                            <input type="text" value={input} onChange={(e) => setInput(e.target.value)} onKeyPress={(e) => e.key === 'Enter' && handleSend()} placeholder={uploadedFiles.length > 0 ? `Ask about ${uploadedFiles.length} files...` : "Message ZAARS..."} disabled={isProcessing || isClarifying} style={{ flex: 1, padding: '12px 8px', background: 'transparent', border: 'none', color: '#fff', outline: 'none', fontSize: '15px', fontWeight: 400, minWidth: 0 }} />
 
                                             <Magnet padding={60} magnetStrength={-2.5} disabled={!input.trim() && uploadedFiles.length === 0 || isProcessing || isClarifying}>
-                                                <button onClick={handleSend} disabled={!input.trim() && uploadedFiles.length === 0 || isProcessing || isClarifying} style={{ padding: '12px', background: (input.trim() || uploadedFiles.length > 0) ? '#fff' : 'rgba(255,255,255,0.1)', border: 'none', borderRadius: '50%', cursor: (input.trim() || uploadedFiles.length > 0) && !isProcessing && !isClarifying ? 'pointer' : 'default', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'all 0.3s ease', color: (input.trim() || uploadedFiles.length > 0) ? '#000' : '#fff' }}>
+                                                <button onClick={handleSend} disabled={!input.trim() && uploadedFiles.length === 0 || isProcessing || isClarifying} style={{ padding: '12px', background: (input.trim() || uploadedFiles.length > 0) ? '#fff' : 'rgba(255,255,255,0.1)', border: 'none', borderRadius: '50%', cursor: (input.trim() || uploadedFiles.length > 0) && !isProcessing && !isClarifying ? 'pointer' : 'default', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'all 0.3s ease', color: (input.trim() || uploadedFiles.length > 0) ? '#000' : '#fff', flexShrink: 0 }}>
                                                     <Send size={18} />
                                                 </button>
                                             </Magnet>
