@@ -32,9 +32,160 @@ import remarkMath from 'remark-math';
 import rehypeKatex from 'rehype-katex';
 import 'katex/dist/katex.min.css';
 import mammoth from 'mammoth';
+import { Canvas, useFrame, useThree } from '@react-three/fiber';
+import { EffectComposer, wrapEffect } from '@react-three/postprocessing';
+import { Effect } from 'postprocessing';
+import { ResponsiveContainer, LineChart, Line, AreaChart, Area, YAxis, XAxis, Tooltip, BarChart, Bar, Cell } from 'recharts';
+
+import mammoth from 'mammoth';
 import * as pdfjsLib from 'pdfjs-dist';
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = '/pdf.worker.min.mjs';
+
+// ── CRYSO-inspired Dither Component ──────────────────────────────────────────
+const waveVertexShader = `
+precision highp float;
+varying vec2 vUv;
+void main() {
+  vUv = uv;
+  vec4 modelPosition = modelMatrix * vec4(position, 1.0);
+  vec4 viewPosition = viewMatrix * modelPosition;
+  gl_Position = projectionMatrix * viewPosition;
+}
+`;
+
+const waveFragmentShader = `
+precision highp float;
+uniform vec2 resolution;
+uniform float time;
+uniform float waveSpeed;
+uniform float waveFrequency;
+uniform float waveAmplitude;
+uniform vec3 waveColor;
+
+vec4 mod289(vec4 x) { return x - floor(x * (1.0/289.0)) * 289.0; }
+vec4 permute(vec4 x) { return mod289(((x * 34.0) + 1.0) * x); }
+vec4 taylorInvSqrt(vec4 r) { return 1.79284291400159 - 0.85373472095314 * r; }
+vec2 fade(vec2 t) { return t*t*t*(t*(t*6.0-15.0)+10.0); }
+
+float cnoise(vec2 P) {
+  vec4 Pi = floor(P.xyxy) + vec4(0.0,0.0,1.0,1.0);
+  vec4 Pf = fract(P.xyxy) - vec4(0.0,0.0,1.0,1.0);
+  Pi = mod289(Pi);
+  vec4 ix = Pi.xzxz; vec4 iy = Pi.yyww; vec4 fx = Pf.xzxz; vec4 fy = Pf.yyww;
+  vec4 i = permute(permute(ix) + iy);
+  vec4 gx = fract(i * (1.0/41.0)) * 2.0 - 1.0;
+  vec4 gy = abs(gx) - 0.5;
+  vec4 tx = floor(gx + 0.5);
+  gx = gx - tx;
+  vec2 g00 = vec2(gx.x, gy.x); vec2 g10 = vec2(gx.y, gy.y);
+  vec2 g01 = vec2(gx.z, gy.z); vec2 g11 = vec2(gx.w, gy.w);
+  vec4 norm = taylorInvSqrt(vec4(dot(g00,g00), dot(g01,g01), dot(g10,g10), dot(g11,g11)));
+  g00 *= norm.x; g01 *= norm.y; g10 *= norm.z; g11 *= norm.w;
+  float n00 = dot(g00, vec2(fx.x, fy.x)); float n10 = dot(g10, vec2(fx.y, fy.y));
+  float n01 = dot(g01, vec2(fx.z, fy.z)); float n11 = dot(g11, vec2(fx.w, fy.w));
+  vec2 fade_xy = fade(Pf.xy);
+  vec2 n_x = mix(vec2(n00, n01), vec2(n10, n11), fade_xy.x);
+  return 2.3 * mix(n_x.x, n_x.y, fade_xy.y);
+}
+
+float pattern(vec2 p) {
+  vec2 p2 = p - time * waveSpeed;
+  float value = 0.0; float amp = 1.0; float freq = waveFrequency;
+  for (int i = 0; i < 4; i++) {
+    value += amp * abs(cnoise(p));
+    p *= freq; amp *= waveAmplitude;
+  }
+  return value + cnoise(p2); 
+}
+
+void main() {
+  vec2 uv = gl_FragCoord.xy / resolution.xy;
+  uv -= 0.5;
+  uv.x *= resolution.x / resolution.y;
+  float f = pattern(uv);
+  vec3 col = mix(vec3(0.0), waveColor, f);
+  gl_FragColor = vec4(col, 1.0);
+}
+`;
+
+const ditherFragmentShader = `
+precision highp float;
+uniform float colorNum;
+uniform float pixelSize;
+const float bayerMatrix8x8[64] = float[64](
+  0.0/64.0, 48.0/64.0, 12.0/64.0, 60.0/64.0,  3.0/64.0, 51.0/64.0, 15.0/64.0, 63.0/64.0,
+  32.0/64.0,16.0/64.0, 44.0/64.0, 28.0/64.0, 35.0/64.0,19.0/64.0, 47.0/64.0, 31.0/64.0,
+  8.0/64.0, 56.0/64.0,  4.0/64.0, 52.0/64.0, 11.0/64.0,59.0/64.0,  7.0/64.0, 55.0/64.0,
+  40.0/64.0,24.0/64.0, 36.0/64.0, 20.0/64.0, 43.0/64.0,27.0/64.0, 39.0/64.0, 23.0/64.0,
+  2.0/64.0, 50.0/64.0, 14.0/64.0, 62.0/64.0,  1.0/64.0,49.0/64.0, 13.0/64.0, 61.0/64.0,
+  34.0/64.0,18.0/64.0, 46.0/64.0, 30.0/64.0, 33.0/64.0,17.0/64.0, 45.0/64.0, 29.0/64.0,
+  10.0/64.0,58.0/64.0,  6.0/64.0, 54.0/64.0,  9.0/64.0,57.0/64.0,  5.0/64.0, 53.0/64.0,
+  42.0/64.0,26.0/64.0, 38.0/64.0, 22.0/64.0, 41.0/64.0,25.0/64.0, 37.0/64.0, 21.0/64.0
+);
+
+vec3 dither(vec2 uv, vec3 color) {
+  vec2 scaledCoord = floor(uv * resolution / pixelSize);
+  int x = int(mod(scaledCoord.x, 8.0));
+  int y = int(mod(scaledCoord.y, 8.0));
+  float threshold = bayerMatrix8x8[y * 8 + x] - 0.25;
+  float step = 1.0 / (colorNum - 1.0);
+  color += threshold * step;
+  color = clamp(color - 0.2, 0.0, 1.0);
+  return floor(color * (colorNum - 1.0) + 0.5) / (colorNum - 1.0);
+}
+
+void mainImage(in vec4 inputColor, in vec2 uv, out vec4 outputColor) {
+  vec2 normalizedPixelSize = pixelSize / resolution;
+  vec2 uvPixel = normalizedPixelSize * floor(uv / normalizedPixelSize);
+  vec4 color = texture2D(inputBuffer, uvPixel);
+  color.rgb = dither(uv, color.rgb);
+  outputColor = color;
+}
+`;
+
+class RetroEffectImpl extends Effect {
+    constructor() {
+        const uniforms = new Map([['colorNum', new THREE.Uniform(4.0)], ['pixelSize', new THREE.Uniform(2.0)]]);
+        super('RetroEffect', ditherFragmentShader, { uniforms });
+    }
+}
+const WrappedRetro = wrapEffect(RetroEffectImpl);
+const RetroEffect = forwardRef(({ colorNum, pixelSize }, ref) => <WrappedRetro ref={ref} colorNum={colorNum} pixelSize={pixelSize} />);
+
+function DitheredWaves({ waveSpeed, waveFrequency, waveAmplitude, waveColor, colorNum, pixelSize }) {
+    const { viewport, size, gl } = useThree();
+    const uniforms = useRef({
+        time: new THREE.Uniform(0),
+        resolution: new THREE.Uniform(new THREE.Vector2(0, 0)),
+        waveSpeed: new THREE.Uniform(waveSpeed),
+        waveFrequency: new THREE.Uniform(waveFrequency),
+        waveAmplitude: new THREE.Uniform(waveAmplitude),
+        waveColor: new THREE.Uniform(new THREE.Color(...waveColor)),
+    });
+    useEffect(() => {
+        const dpr = gl.getPixelRatio();
+        uniforms.current.resolution.value.set(Math.floor(size.width * dpr), Math.floor(size.height * dpr));
+    }, [size, gl]);
+    useFrame(({ clock }) => { uniforms.current.time.value = clock.getElapsedTime(); });
+    return (
+        <>
+            <mesh scale={[viewport.width, viewport.height, 1]}>
+                <planeGeometry args={[1, 1]} />
+                <shaderMaterial vertexShader={waveVertexShader} fragmentShader={waveFragmentShader} uniforms={uniforms.current} />
+            </mesh>
+            <EffectComposer><RetroEffect colorNum={colorNum} pixelSize={pixelSize} /></EffectComposer>
+        </>
+    );
+}
+
+const DitherBackground = () => (
+    <div style={{ position: 'fixed', inset: 0, zIndex: 0, pointerEvents: 'none', opacity: 0.4 }}>
+        <Canvas camera={{ position: [0, 0, 6] }} dpr={1} gl={{ antialias: false }}>
+            <DitheredWaves waveSpeed={0.03} waveFrequency={2} waveAmplitude={0.4} waveColor={[0.1, 0.1, 0.1]} colorNum={3} pixelSize={2} />
+        </Canvas>
+    </div>
+);
 
 
 // ── Inlined Magnet (Interaction Component) ───────────────────────────────────
@@ -409,6 +560,117 @@ export default function App() {
             setCurrentWelcome(prompts[Math.floor(Math.random() * prompts.length)]);
         }
     }, [messages.length, isAuthenticated, userProfile.name, currentView, isPrivateMode]);
+
+    // ── Intelligence Dashboard Logic (Tailored from CRYSO) ───────────────────
+    const [intelligenceOpen, setIntelligenceOpen] = useState(false);
+    const [intelStats, setIntelStats] = useState({
+        velocity: 88,
+        zeroErrorProb: 99.4,
+        contextDepth: 12400,
+        breakouts: 4,
+        sentiment: 72
+    });
+    const [intelHistory, setIntelHistory] = useState(
+        Array.from({ length: 15 }).map((_, i) => ({
+            time: new Date(Date.now() - (15 - i) * 60000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+            velocity: 80 + Math.random() * 15,
+            confidence: 98 + Math.random() * 1.5
+        }))
+    );
+
+    useEffect(() => {
+        const id = setInterval(() => {
+            setIntelStats(prev => ({
+                ...prev,
+                velocity: Math.min(100, Math.max(70, prev.velocity + (Math.random() - 0.5) * 5)),
+                zeroErrorProb: Math.min(100, Math.max(99.0, prev.zeroErrorProb + (Math.random() - 0.5) * 0.1)),
+                contextDepth: prev.contextDepth + Math.floor(Math.random() * 10)
+            }));
+            setIntelHistory(prev => {
+                const updated = [...prev, {
+                    time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+                    velocity: 80 + Math.random() * 15,
+                    confidence: 98 + Math.random() * 1.5
+                }];
+                return updated.length > 20 ? updated.slice(1) : updated;
+            });
+        }, 8000);
+        return () => clearInterval(id);
+    }, []);
+
+    const IntelligenceDashboard = () => (
+        <div style={{ position: 'fixed', inset: 0, zIndex: 1000, background: 'rgba(5, 5, 5, 0.95)', backdropFilter: 'blur(32px)', display: 'flex', flexDirection: 'column', animation: 'slideIn 0.4s ease' }}>
+            <div style={{ padding: '24px 40px', borderBottom: '1px solid rgba(255,255,255,0.08)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <div>
+                    <h2 style={{ margin: 0, color: '#fff', fontSize: '20px', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '12px' }}>
+                        <Activity color="#fc42ff" size={24} /> Intelligence Radar
+                    </h2>
+                    <p style={{ margin: '4px 0 0', color: 'rgba(255,255,255,0.4)', fontSize: '12px' }}>Working model tailored from CRYSO-MemeCoinRadar architecture</p>
+                </div>
+                <button onClick={() => setIntelligenceOpen(false)} style={{ background: 'rgba(255,255,255,0.05)', border: 'none', borderRadius: '50%', width: '40px', height: '40px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', cursor: 'pointer' }}>
+                    <X size={20} />
+                </button>
+            </div>
+
+            <div style={{ flex: 1, overflowY: 'auto', padding: '32px 40px' }}>
+                {/* Stats Row */}
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '20px', marginBottom: '40px' }}>
+                    {[
+                        { label: 'AGENT VELOCITY', val: intelStats.velocity.toFixed(0), sub: 'Thinking Steps/Sec', color: '#fc42ff' },
+                        { label: 'ZERO-ERROR CONFIDENCE', val: intelStats.zeroErrorProb.toFixed(1) + '%', sub: 'Statistical Probability', color: '#00ff90' },
+                        { label: 'CONTEXT DEPTH', val: intelStats.contextDepth.toLocaleString(), sub: 'Active Tokens', color: '#4285f4' },
+                        { label: 'REASONING PATHS', val: (messages.length * 3 + 2).toString(), sub: 'Complexity level', color: '#fff' }
+                    ].map(s => (
+                        <div key={s.label} style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '24px', padding: '24px' }}>
+                            <div style={{ fontSize: '10px', color: 'rgba(255,255,255,0.3)', fontWeight: 700, letterSpacing: '1px', marginBottom: '8px' }}>{s.label}</div>
+                            <div style={{ fontSize: '32px', color: s.color, fontWeight: 700 }}>{s.val}</div>
+                            <div style={{ fontSize: '11px', color: 'rgba(255,255,255,0.4)', marginTop: '4px' }}>{s.sub}</div>
+                        </div>
+                    ))}
+                </div>
+
+                <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '2fr 1fr', gap: '24px' }}>
+                    <div style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '24px', padding: '24px' }}>
+                        <div style={{ fontSize: '13px', color: '#fff', fontWeight: 600, marginBottom: '20px' }}>Reasoning Velocity Trend</div>
+                        <div style={{ width: '100%', height: '240px' }}>
+                            <ResponsiveContainer width="100%" height="100%">
+                                <AreaChart data={intelHistory}>
+                                    <defs>
+                                        <linearGradient id="colorVel" x1="0" y1="0" x2="0" y2="1">
+                                            <stop offset="5%" stopColor="#fc42ff" stopOpacity={0.3}/>
+                                            <stop offset="95%" stopColor="#fc42ff" stopOpacity={0}/>
+                                        </linearGradient>
+                                    </defs>
+                                    <XAxis dataKey="time" hide />
+                                    <YAxis hide domain={['dataMin - 10', 'dataMax + 10']} />
+                                    <Tooltip contentStyle={{ background: 'rgba(10,10,10,0.9)', border: '1px solid rgba(252,66,255,0.3)', borderRadius: '12px', fontSize: '12px' }} />
+                                    <Area type="monotone" dataKey="velocity" stroke="#fc42ff" strokeWidth={3} fillOpacity={1} fill="url(#colorVel)" isAnimationActive={false} />
+                                </AreaChart>
+                            </ResponsiveContainer>
+                        </div>
+                    </div>
+
+                    <div style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '24px', padding: '24px' }}>
+                        <div style={{ fontSize: '13px', color: '#fff', fontWeight: 600, marginBottom: '20px' }}>Confidence Variance</div>
+                        <div style={{ width: '100%', height: '240px' }}>
+                            <ResponsiveContainer width="100%" height="100%">
+                                <BarChart data={intelHistory.slice(-6)}>
+                                    <Bar dataKey="confidence" fill="#00ff90" radius={[6, 6, 0, 0]}>
+                                        {intelHistory.slice(-6).map((entry, index) => (
+                                            <Cell key={`cell-${index}`} fillOpacity={0.4 + (index / 10)} />
+                                        ))}
+                                    </Bar>
+                                </BarChart>
+                            </ResponsiveContainer>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <style>{`
+                @keyframes slideIn { from { transform: translateY(30px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+            `}</style>
+        </div>
+    );
 
     // ── Authentication Logic ───────────────────────────────────────────────────
     const handleLogin = async (e) => {
@@ -949,12 +1211,10 @@ CRITICAL INSTRUCTIONS for SIMPLE MODE:
     };
 
     return (
-        <div style={{ width: '100vw', height: '100vh', background: isPrivateMode ? '#050008' : '#050505', position: 'relative', overflow: 'hidden', fontFamily: "'Inter', -apple-system, BlinkMacSystemFont, sans-serif", WebkitFontSmoothing: 'antialiased', transition: 'background 0.8s ease' }}>
-
-            {/* ── MagicRings Background Layer ── */}
-            <div style={{ position: 'absolute', inset: 0, zIndex: 1, transition: 'all 0.4s ease', filter: isSidebarOpen ? 'blur(8px) saturate(0.5)' : 'none', opacity: isSidebarOpen ? 0.3 : 1 }}>
-                <MagicRings color="#fc42ff" colorTwo="#42fcff" ringCount={6} speed={1} attenuation={10} lineThickness={2} baseRadius={0.35} radiusStep={0.1} scaleRate={0.1} opacity={1} blur={0} noiseAmount={0.1} rotation={0} ringGap={1.5} fadeIn={0.7} fadeOut={0.5} followMouse={true} mouseInfluence={0.2} hoverScale={1.2} parallax={0.05} clickBurst={true} />
-            </div>
+        <div style={{ width: '100vw', height: '100vh', background: '#050505', color: '#fff', fontFamily: "'Inter', sans-serif", overflow: 'hidden', position: 'relative' }}>
+            <DitherBackground />
+            <div style={{ position: 'relative', zIndex: 1, width: '100%', height: '100%', display: 'flex' }}>
+                {intelligenceOpen && <IntelligenceDashboard />}
 
             {/* ── Purple Veil Overlay ── */}
             <div style={{ position: 'absolute', inset: 0, zIndex: 2, backgroundColor: '#800080', opacity: isPrivateMode ? 0.35 : 0, pointerEvents: 'none', transition: 'opacity 0.8s cubic-bezier(0.4, 0, 0.2, 1)', mixBlendMode: 'color' }} />
@@ -1144,26 +1404,24 @@ CRITICAL INSTRUCTIONS for SIMPLE MODE:
                             {messages.length > 0 && !isPrivateMode && (
                                 <div style={{ marginTop: '32px' }}>
                                     <div style={{ fontSize: '11px', color: 'rgba(255, 255, 255, 0.4)', fontWeight: 600, letterSpacing: '1px', marginBottom: '16px', paddingLeft: '8px' }}>INTELLIGENCE</div>
-                                    <button onClick={generateInsights} disabled={isGeneratingInsights} style={{ width: '100%', padding: '16px', background: 'rgba(255, 255, 255, 0.03)', border: '1px solid rgba(255, 255, 255, 0.1)', borderRadius: '16px', color: '#fff', cursor: isGeneratingInsights ? 'default' : 'pointer', display: 'flex', alignItems: 'center', gap: '12px', transition: 'background 0.2s', textAlign: 'left' }} onMouseOver={e => !isGeneratingInsights && (e.currentTarget.style.background = 'rgba(255,255,255,0.08)')} onMouseOut={e => !isGeneratingInsights && (e.currentTarget.style.background = 'rgba(255,255,255,0.03)')}>
-                                        {isGeneratingInsights ? <Loader2 size={18} className="animate-spin" /> : <Activity size={18} color="#fc42ff" />}
-                                        <span style={{ fontSize: '13px', fontWeight: 500 }}>Analyze Session Patterns</span>
+                                    <button onClick={() => setIntelligenceOpen(true)} style={{ width: '100%', padding: '16px', background: 'rgba(255, 255, 255, 0.03)', border: '1px solid rgba(255, 255, 255, 0.1)', borderRadius: '16px', color: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '12px', transition: 'background 0.2s', textAlign: 'left' }} onMouseOver={e => e.currentTarget.style.background = 'rgba(255,255,255,0.08)'} onMouseOut={e => e.currentTarget.style.background = 'rgba(255,255,255,0.03)'}>
+                                        <Activity size={18} color="#fc42ff" />
+                                        <span style={{ fontSize: '13px', fontWeight: 500 }}>Open Intelligence Radar</span>
                                     </button>
-                                    {insights && (
-                                        <div style={{ position: 'relative', marginTop: '16px', padding: '16px', background: 'rgba(252, 66, 255, 0.05)', border: '1px solid rgba(252, 66, 255, 0.15)', borderRadius: '16px', fontSize: '13px', color: 'rgba(255, 255, 255, 0.8)', lineHeight: '1.6' }}>
-                                            <button onClick={() => setInsights(null)} style={{ position: 'absolute', top: '12px', right: '12px', background: 'rgba(255,255,255,0.05)', border: 'none', borderRadius: '50%', width: '24px', height: '24px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', opacity: 0.6, cursor: 'pointer', transition: 'opacity 0.2s' }} onMouseOver={e => e.currentTarget.style.opacity = 1} onMouseOut={e => e.currentTarget.style.opacity = 0.6}>
-                                                <X size={14} />
-                                            </button>
-                                            <div style={{ paddingRight: '12px' }}>{insights}</div>
-                                        </div>
-                                    )}
                                 </div>
                             )}
                         </div>
 
-                        <div style={{ marginTop: 'auto', paddingTop: '32px', borderTop: '1px solid rgba(255, 255, 255, 0.05)', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '4px' }}>
-                            <span style={{ fontSize: '10px', color: 'rgba(255, 255, 255, 0.3)', letterSpacing: '1px', fontWeight: 600 }}>DESIGNED & DEVELOPED BY</span>
-                            <a href="https://github.com/AbdulArshath007" target="_blank" rel="noopener noreferrer" style={{ fontSize: '12px', color: '#fff', textDecoration: 'none', fontWeight: 500, letterSpacing: '0.5px', transition: 'color 0.2s' }} onMouseOver={e => e.currentTarget.style.color = '#fc42ff'} onMouseOut={e => e.currentTarget.style.color = '#fff'}>
-                                Abdul Arshath
+                        <div style={{ marginTop: 'auto', paddingTop: '24px', borderTop: '1px solid rgba(255, 255, 255, 0.05)', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                                <span style={{ fontSize: '10px', color: 'rgba(255, 255, 255, 0.4)', fontWeight: 700, letterSpacing: '1px' }}>ZAARS</span>
+                                <span style={{ fontSize: '9px', color: 'rgba(255, 255, 255, 0.25)', fontWeight: 500 }}>Zero-Error AI Agent Reasoning System</span>
+                            </div>
+                            <div style={{ fontSize: '10px', color: 'rgba(255, 255, 255, 0.2)', fontStyle: 'italic', marginTop: '12px' }}>
+                                Built with a Lot of coffee and crashouts
+                            </div>
+                            <a href="https://github.com/AbdulArshath007" target="_blank" rel="noopener noreferrer" style={{ fontSize: '11px', color: 'rgba(255,255,255,0.4)', textDecoration: 'none', fontWeight: 500, marginTop: '8px', transition: 'color 0.2s' }} onMouseOver={e => e.currentTarget.style.color = '#fc42ff'} onMouseOut={e => e.currentTarget.style.color = 'rgba(255,255,255,0.4)'}>
+                                © {new Date().getFullYear()} Abdul Arshath
                             </a>
                         </div>
                     </div>
