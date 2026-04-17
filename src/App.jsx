@@ -683,23 +683,19 @@ export default function App() {
         try {
             const apiBase = (window.location.hostname === 'localhost' ? 'http://localhost:5000' : window.location.origin);
             const endpoint = isRegistering ? '/auth/register' : '/auth/login';
+            console.log(`[AUTH] Attempting ${endpoint} at ${apiBase}`);
+            
             const res = await fetch(`${apiBase}${endpoint}`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ username: authData.username, password: authData.password })
             });
 
-            if (!res.ok) {
-                const text = await res.text();
-                const firstChar = text.trim().charAt(0);
-                if (firstChar === '<' || firstChar === '{') {
-                    const snippet = text.slice(0, 80).replace(/<[^>]*>?/gm, ''); 
-                    throw new Error(`API Error ${res.status}: ${snippet || 'Page Not Found'}`);
-                }
-                throw new Error(`API Error ${res.status}`);
-            }
-
             const data = await res.json();
+
+            if (!res.ok) {
+                throw new Error(data.error || data.message || `Error ${res.status}`);
+            }
 
             const newProfile = { ...userProfile, name: data.user.name, originalUsername: data.user.originalUsername, email: data.user.email || '', isGoogle: data.user.isGoogle, token: data.token, avatar: data.user.avatar, apiKey: data.user.apiKey || '' };
             setUserProfile(newProfile);
@@ -707,40 +703,42 @@ export default function App() {
             setIsAuthenticated(true);
             syncHistory(data.token);
         } catch (err) {
-            setAuthError(err.message);
+            console.error("[AUTH ERROR]", err);
+            setAuthError(err.message.includes('Unexpected token') ? 'Server unreachable' : err.message);
         } finally {
             setIsAuthLoading(false);
         }
     };
 
     const handleGoogleSuccess = async (credentialResponse) => {
-        setShowGoogleModal(false);
         setIsAuthLoading(true); setAuthError('');
         try {
             const apiBase = (window.location.hostname === 'localhost' ? 'http://localhost:5000' : window.location.origin);
+            console.log(`[AUTH] Attempting Google Auth at ${apiBase}`);
+            
             const res = await fetch(`${apiBase}/auth/google`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ credential: credentialResponse.credential })
             });
 
+            const data = await res.json();
+
             if (!res.ok) {
-                const text = await res.text();
-                const snippet = text.slice(0, 100).replace(/<[^>]*>?/gm, ''); 
-                throw new Error(`Google Access ${res.status}: ${snippet || 'Service Restricted'}`);
+                throw new Error(data.error || data.message || `Google Error ${res.status}`);
             }
 
-            const data = await res.json();
-            
             const newProfile = { ...userProfile, name: data.user.name, originalUsername: data.user.originalUsername, email: data.user.email || '', isGoogle: true, token: data.token, avatar: data.user.avatar, apiKey: data.user.apiKey || '' };
             setUserProfile(newProfile);
             localStorage.setItem('zaars_user_profile', JSON.stringify(newProfile));
             setIsAuthenticated(true);
             syncHistory(data.token);
         } catch (err) {
+            console.error("[GOOGLE AUTH ERROR]", err);
             setAuthError(err.message);
         } finally {
             setIsAuthLoading(false);
+            setShowGoogleModal(false);
         }
     };
 
@@ -977,16 +975,23 @@ export default function App() {
                 let text = data.choices?.[0]?.message?.content;
                 if (!text) throw new Error("No response from AI");
 
-                // Sanitize broken LaTeX/Escapes
-                text = text.replace(/\x0C/g, '\\frac'); // Form feed character
-                text = text.replace(/\\f/g, '\\frac');
-                if (typeof text === 'string') {
-                    // Fix some other common mis-escapes
-                    text = text.replace(/\\t/g, '\\text');
-                }
+                // Clean up any double-escaped characters that might come from the API
+                text = text.replace(/\\\\n/g, '\n'); 
+                text = text.replace(/\\n/g, '\n');
 
                 if (useJson) {
-                    try { return JSON.parse(text); } catch(e) { return { type: "chat", solution: text }; }
+                    try { 
+                        let cleanText = text.trim();
+                        // Remove markdown code blocks if the AI wrapped the JSON
+                        if (cleanText.startsWith('```')) {
+                            const match = cleanText.match(/```(?:json)?\s*([\s\S]*?)```/);
+                            if (match) cleanText = match[1].trim();
+                        }
+                        return JSON.parse(cleanText); 
+                    } catch(e) { 
+                        console.warn("[ZAARS] JSON Parse Failed, falling back to simple chat", e);
+                        return { type: "chat", solution: text }; 
+                    }
                 }
                 return text;
             } catch (error) { 
@@ -1180,14 +1185,15 @@ export default function App() {
                 ? `You are ZAARS (Zero-error AI Agent Reasoning System), a specialized Mathematical Reasoning Engine. 
 CRITICAL INSTRUCTIONS for REASONING MODE:
 - **First Principles**: You MUST analyze the problem mathematically from first principles. Do NOT rely on patterns or memorized answers. Solve it perfectly.
-- **Derivation Logic**: Always provide a rigorous, logical step-by-step derivation. Verify every step internally before answering.
-- **LaTeX Priority**: All mathematical expressions MUST be formatted correctly in LaTeX ($...$ inline, $$...$$ block). Ensure correct backslash escaping.
+- **Derivation Logic**: Always provide a rigorous, logical step-by-step derivation. Use a methodical, formula-driven approach.
+- **LaTeX Priority**: All mathematical expressions MUST be formatted correctly in LaTeX using double backslashes for commands (e.g., \\\\frac{a}{b}, \\\\sqrt{x}, \\\\text{...}). 
+- **Display Math**: Use $$...$$ for important formulas and steps to ensure they are clear and centered.
 - **Zero-Error**: Your primary goal is absolute accuracy.` 
                 : `You are ZAARS, a helpful and direct AI assistant. 
 CRITICAL INSTRUCTIONS for SIMPLE MODE:
 - **Conciseness**: Give very simple, brief, and direct answers. 
 - **No Overthinking**: Do not over-analyze, explain, or provide deep derivations unless the user explicitly requests a long explanation. Be conversational.
-- **Math Formatting**: If math happens to be requested, use standard LaTeX ($...$ and $$...$$), but keep the explanation extremely brief.`;
+- **Math Formatting**: Use standard LaTeX ($...$ and $$...$$). Use double backslashes for commands.`;
 
             const modeInstruction = mode === 'reasoning' 
                 ? "Your response MUST be a JSON object with strictly these keys: 'type' (set to 'reasoning'), 'thought' (your deep step-by-step derivation and first-principles analysis), 'verification' (double-checking the logic), and 'solution' (the final correct answer)." 
@@ -1611,9 +1617,12 @@ CRITICAL INSTRUCTIONS for SIMPLE MODE:
                                                             m.content.solution || m.content.thought ? (
                                                                 <div style={{ width: '100%', maxWidth: '100%', display: 'flex', flexDirection: 'column', gap: '16px' }}>
                                                                     {m.content.thought && (
-                                                                        <div style={{ paddingLeft: '20px', borderLeft: '2px solid rgba(255, 255, 255, 0.15)' }}>
-                                                                            <div style={{ fontSize: '10px', fontWeight: 600, color: 'rgba(255, 255, 255, 0.5)', marginBottom: '8px', letterSpacing: '1px' }}>REASONING</div>
-                                                                            <div className="math-container" style={{ fontSize: '14px', color: 'rgba(255, 255, 255, 0.6)', lineHeight: '1.7' }}>
+                                                                        <div style={{ marginBottom: '24px' }}>
+                                                                            <div style={{ fontSize: '11px', fontWeight: 700, color: '#fc42ff', marginBottom: '12px', letterSpacing: '2px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                                                                <div style={{ width: '4px', height: '12px', background: '#fc42ff', borderRadius: '2px' }}></div>
+                                                                                THOUGHT PROCESS
+                                                                            </div>
+                                                                            <div className="math-container" style={{ fontSize: '15px', color: 'rgba(255, 255, 255, 0.85)', lineHeight: '1.8' }}>
                                                                                 <ReactMarkdown remarkPlugins={[remarkMath]} rehypePlugins={[rehypeKatex]}>
                                                                                     {m.content.thought}
                                                                                 </ReactMarkdown>
@@ -1622,9 +1631,11 @@ CRITICAL INSTRUCTIONS for SIMPLE MODE:
                                                                     )}
         
                                                                     {m.content.verification && (
-                                                                        <div style={{ paddingLeft: '20px', borderLeft: '2px solid rgba(255, 255, 255, 0.15)' }}>
-                                                                            <div style={{ fontSize: '10px', fontWeight: 600, color: 'rgba(255, 255, 255, 0.5)', marginBottom: '8px', letterSpacing: '1px' }}>METHOD VERIFICATION</div>
-                                                                            <div className="math-container" style={{ fontSize: '14px', color: 'rgba(255, 255, 255, 0.6)', lineHeight: '1.7' }}>
+                                                                        <div style={{ marginBottom: '24px', background: 'rgba(255,255,255,0.02)', padding: '20px', borderRadius: '16px', border: '1px solid rgba(255,255,255,0.05)' }}>
+                                                                            <div style={{ fontSize: '11px', fontWeight: 700, color: '#00ff90', marginBottom: '12px', letterSpacing: '2px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                                                                <ShieldCheck size={14} /> METHOD VERIFICATION
+                                                                            </div>
+                                                                            <div className="math-container" style={{ fontSize: '14px', color: 'rgba(255, 255, 255, 0.7)', lineHeight: '1.7' }}>
                                                                                 <ReactMarkdown remarkPlugins={[remarkMath]} rehypePlugins={[rehypeKatex]}>
                                                                                     {m.content.verification}
                                                                                 </ReactMarkdown>
@@ -1632,7 +1643,8 @@ CRITICAL INSTRUCTIONS for SIMPLE MODE:
                                                                         </div>
                                                                     )}
         
-                                                                    <div className="math-container" style={{ color: '#e4e4e7', padding: '16px 0', borderTop: '1px solid rgba(255,255,255,0.05)', fontSize: '15px', lineHeight: '1.7', marginTop: '8px' }}>
+                                                                    <div className="math-container" style={{ color: '#fff', padding: '24px 0', borderTop: '2px solid rgba(255,255,255,0.08)', fontSize: '16px', lineHeight: '1.8' }}>
+                                                                        <div style={{ fontSize: '11px', fontWeight: 700, color: '#fff', marginBottom: '16px', letterSpacing: '2px', opacity: 0.5 }}>FINAL SOLUTION</div>
                                                                         <ReactMarkdown remarkPlugins={[remarkMath]} rehypePlugins={[rehypeKatex]}>
                                                                             {m.content.solution}
                                                                         </ReactMarkdown>
@@ -1789,13 +1801,15 @@ CRITICAL INSTRUCTIONS for SIMPLE MODE:
             color: rgba(255,255,255,0.6); 
         }
         .katex-display { 
-            background: rgba(255, 255, 255, 0.02);
-            padding: 24px;
-            border-radius: 20px;
-            border: 1px solid rgba(255, 255, 255, 0.04);
-            margin: 2.5em 0 !important;
+            background: rgba(252, 66, 255, 0.03);
+            padding: 32px;
+            border-radius: 24px;
+            border: 1px solid rgba(252, 66, 255, 0.1);
+            margin: 2em 0 !important;
+            box-shadow: inset 0 0 40px rgba(0,0,0,0.2);
         }
-        .katex { font-size: 1.1em; }
+        .katex { font-size: 1.15em; color: #fff; }
+        .katex-display > .katex { color: #fc42ff; }
 
         @media (max-width: 768px) {
             /* Header */
