@@ -22,6 +22,8 @@
 - [🌟 Key Features](#-key-features)
 - [📝 Project Summary](#-project-summary)
 - [📂 File Architecture](#-file-architecture)
+- [📄 Project Requirement Document (PDF)](docs/PRD.pdf)
+- [📊 Project Presentation (PRD)](docs/PRD.md)
 - [🤖 AI Implementation](#-ai-implementation)
 - [🔄 Project Workflow](#-project-workflow)
 - [🏗️ System Architecture](#-system-architecture)

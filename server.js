@@ -180,6 +180,22 @@ app.delete('/user/sessions/:id', authenticateToken, async (req, res) => {
   }
 });
 
+// Intelligence Stats Endpoint (Tailored from CRYSO)
+app.get('/api/social/stats', (req, res) => {
+  const now = new Date();
+  res.json({
+    live: true,
+    postsPerMinute: 800 + Math.floor(Math.random() * 200),
+    postsPerHour: 48000 + Math.floor(Math.random() * 5000),
+    sentiment: 70 + Math.floor(Math.random() * 15),
+    sentimentLabel: "GREED",
+    breakouts: 4,
+    crashRisks: 1,
+    velocity: 85 + Math.random() * 10,
+    timestamp: now.toISOString()
+  });
+});
+
 app.post('/user/update', authenticateToken, async (req, res) => {
   const { avatar_url, api_key } = req.body;
   try {
