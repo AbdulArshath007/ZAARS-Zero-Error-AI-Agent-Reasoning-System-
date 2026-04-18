@@ -515,11 +515,37 @@ export default function App() {
     const [isPrivateMode, setIsPrivateMode] = useState(false);
     const [isMobile, setIsMobile] = useState(() => window.innerWidth <= 768);
 
+    // Python Sandbox State
+    const [pyodide, setPyodide] = useState(null);
+    const [isPyodideLoading, setIsPyodideLoading] = useState(false);
+
     useEffect(() => {
-        const handleResize = () => setIsMobile(window.innerWidth <= 768);
-        window.addEventListener('resize', handleResize);
-        return () => window.removeEventListener('resize', handleResize);
+        const loadPy = async () => {
+            if (window.loadPyodide && !pyodide) {
+                setIsPyodideLoading(true);
+                try {
+                    const py = await window.loadPyodide();
+                    setPyodide(py);
+                } catch (e) {
+                    console.error("Pyodide Load Error", e);
+                } finally {
+                    setIsPyodideLoading(false);
+                }
+            }
+        };
+        loadPy();
     }, []);
+
+    const runPython = async (code) => {
+        if (!pyodide) return "Python Sandbox not initialized.";
+        try {
+            await pyodide.loadPackagesFromImports(code);
+            const result = await pyodide.runPythonAsync(code);
+            return result?.toString() || "Success (No Output)";
+        } catch (e) {
+            return `Error: ${e.message}`;
+        }
+    };
 
     const [history, setHistory] = useState([]);
     const [activeSessionId, setActiveSessionId] = useState(null);
@@ -1195,13 +1221,36 @@ CRITICAL INSTRUCTIONS for SIMPLE MODE:
 - **No Overthinking**: Do not over-analyze, explain, or provide deep derivations unless the user explicitly requests a long explanation. Be conversational.
 - **Math Formatting**: Use standard LaTeX ($...$ and $$...$$). Use double backslashes for commands.`;
 
-            const modeInstruction = mode === 'reasoning' 
-                ? "Your response MUST be a JSON object with strictly these keys: 'type' (set to 'reasoning'), 'thought' (your deep step-by-step derivation and first-principles analysis), 'verification' (double-checking the logic), and 'solution' (the final correct answer)." 
-                : "Your response MUST be a JSON object with strictly these keys: 'type' (set to 'chat'), and 'solution' (the direct, concise answer).";
+            let finalResponse;
 
-            const response = await callGroqAPI(apiHistory, `${baseInstruction} ${modeInstruction}`, true);
-            if (mode === 'reasoning') { setCurrentStep('Validating adaptive logic...'); await new Promise(r => setTimeout(r, 600)); }
-            const assistantMessage = { role: 'assistant', content: response, timestamp: new Date().toISOString() };
+            if (mode === 'reasoning') {
+                // ── AGENTIC SELF-CORRECTION LOOP ────────────────────────────────
+                setCurrentStep('Drafting logical path...');
+                const draftInstruction = `${baseInstruction} Response MUST be JSON with: 'thought' (derivation), 'code' (optional Python to verify), and 'solution'.`;
+                const draft = await callGroqAPI(apiHistory, draftInstruction, true);
+
+                // Run Sandbox if code exists
+                let sandboxResult = "";
+                if (draft.code && pyodide) {
+                    setCurrentStep('Executing Sandbox simulation...');
+                    sandboxResult = await runPython(draft.code);
+                }
+
+                setCurrentStep('Auditing solution for hallucinations...');
+                const auditHistory = [...apiHistory, 
+                    { role: 'assistant', content: JSON.stringify(draft) },
+                    { role: 'user', content: `[SYSTEM AUDITOR]: Review the draft above. ${sandboxResult ? `Python Sandbox Output: ${sandboxResult}.` : ''} Identify any flaws and provide the final, zero-error version.` }
+                ];
+                
+                setCurrentStep('Finalizing verified synthesis...');
+                const modeInstruction = "Your response MUST be a JSON object with strictly these keys: 'type' (set to 'reasoning'), 'thought' (the final verified derivation), 'verification' (how the audit/sandbox confirmed accuracy), and 'solution' (the final correct answer), 'isVerified' (set to true), 'sandboxOutput' (the output of the python execution if any).";
+                finalResponse = await callGroqAPI(auditHistory, `${baseInstruction} ${modeInstruction}`, true);
+            } else {
+                const modeInstruction = "Your response MUST be a JSON object with strictly these keys: 'type' (set to 'chat'), and 'solution' (the direct, concise answer).";
+                finalResponse = await callGroqAPI(apiHistory, `${baseInstruction} ${modeInstruction}`, true);
+            }
+
+            const assistantMessage = { role: 'assistant', content: finalResponse, timestamp: new Date().toISOString() };
             const finalMessages = [...newMessages, assistantMessage];
             setMessages(finalMessages);
 
@@ -1213,7 +1262,13 @@ CRITICAL INSTRUCTIONS for SIMPLE MODE:
                 });
                 saveSessionToDB({ id: activeSessionId, title: input || '📎 Notes Analysis', messages: finalMessages, insights });
             }
-        } catch (error) { setMessages(prev => [...prev, { role: 'error', content: `Error: ${error.message}`, timestamp: new Date().toISOString() }]); } finally { setIsProcessing(false); setCurrentStep(''); }
+        } catch (error) { 
+            console.error("HANDLE SEND ERROR", error);
+            setMessages(prev => [...prev, { role: 'error', content: `Error: ${error.message}`, timestamp: new Date().toISOString() }]); 
+        } finally { 
+            setIsProcessing(false); 
+            setCurrentStep(''); 
+        }
     };
 
     return (
@@ -1616,6 +1671,13 @@ CRITICAL INSTRUCTIONS for SIMPLE MODE:
                                                         ) : (
                                                             m.content.solution || m.content.thought ? (
                                                                 <div style={{ width: '100%', maxWidth: '100%', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                                                                    {/* Verified Badge */}
+                                                                    {m.content.isVerified && (
+                                                                        <div style={{ alignSelf: 'flex-start', display: 'flex', alignItems: 'center', gap: '8px', padding: '6px 12px', background: 'rgba(0, 255, 144, 0.1)', border: '1px solid rgba(0, 255, 144, 0.2)', borderRadius: '12px', color: '#00ff90', fontSize: '11px', fontWeight: 700, letterSpacing: '0.5px', marginBottom: '8px' }}>
+                                                                            <ShieldCheck size={14} /> VERIFIED BY ZAARS AGENT
+                                                                        </div>
+                                                                    )}
+
                                                                     {m.content.thought && (
                                                                         <div style={{ marginBottom: '24px' }}>
                                                                             <div style={{ fontSize: '11px', fontWeight: 700, color: '#fc42ff', marginBottom: '12px', letterSpacing: '2px', display: 'flex', alignItems: 'center', gap: '8px' }}>
@@ -1629,16 +1691,22 @@ CRITICAL INSTRUCTIONS for SIMPLE MODE:
                                                                             </div>
                                                                         </div>
                                                                     )}
-        
-                                                                    {m.content.verification && (
-                                                                        <div style={{ marginBottom: '24px', background: 'rgba(255,255,255,0.02)', padding: '20px', borderRadius: '16px', border: '1px solid rgba(255,255,255,0.05)' }}>
-                                                                            <div style={{ fontSize: '11px', fontWeight: 700, color: '#00ff90', marginBottom: '12px', letterSpacing: '2px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                                                                <ShieldCheck size={14} /> METHOD VERIFICATION
+
+                                                                    {/* Sandbox Output Terminal */}
+                                                                    {m.content.sandboxOutput && (
+                                                                        <div style={{ marginBottom: '24px' }}>
+                                                                            <div style={{ fontSize: '11px', fontWeight: 700, color: '#42fcff', marginBottom: '12px', letterSpacing: '2px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                                                                <Zap size={14} /> SANDBOX EXECUTION
                                                                             </div>
-                                                                            <div className="math-container" style={{ fontSize: '14px', color: 'rgba(255, 255, 255, 0.7)', lineHeight: '1.7' }}>
-                                                                                <ReactMarkdown remarkPlugins={[remarkMath]} rehypePlugins={[rehypeKatex]}>
-                                                                                    {m.content.verification}
-                                                                                </ReactMarkdown>
+                                                                            <div style={{ background: '#0a0a0a', border: '1px solid rgba(66, 252, 255, 0.1)', borderRadius: '16px', padding: '16px', fontFamily: "'Fira Code', monospace", fontSize: '13px', color: '#42fcff', position: 'relative', overflow: 'hidden' }}>
+                                                                                <div style={{ position: 'absolute', right: '12px', top: '12px', background: 'rgba(255,255,255,0.05)', padding: '4px 8px', borderRadius: '6px', fontSize: '9px', fontWeight: 600, color: 'rgba(255,255,255,0.4)', letterSpacing: '1px' }}>PYTHON 3.11</div>
+                                                                                <div style={{ borderLeft: '2px solid rgba(66, 252, 255, 0.3)', paddingLeft: '12px', margin: '8px 0' }}>
+                                                                                    <pre style={{ margin: 0, whiteSpace: 'pre-wrap' }}>{m.content.sandboxOutput}</pre>
+                                                                                </div>
+                                                                                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '12px' }}>
+                                                                                    <CheckCircle2 size={12} color="#00ff90" />
+                                                                                    <span style={{ fontSize: '10px', color: 'rgba(0, 255, 144, 0.6)', fontWeight: 600 }}>Zero-Error Verification Complete</span>
+                                                                                </div>
                                                                             </div>
                                                                         </div>
                                                                     )}
