@@ -1005,6 +1005,19 @@ export default function App() {
                 text = text.replace(/\\\\n/g, '\n'); 
                 text = text.replace(/\\n/g, '\n');
 
+                // NEW: SANITIZE MANGLED LATEX (Fixes 'fracrac' and missing backslashes)
+                const sanitizeMath = (str) => {
+                    if (typeof str !== 'string') return str;
+                    return str
+                        .replace(/fracrac/g, '\\frac') // Direct fix for the reported bug
+                        .replace(/pmmsqrt/g, '\\pm\\sqrt') // Fix for another common mangle seen in screenshots
+                        .replace(/msqrt/g, '\\sqrt')
+                        .replace(/\\p m/g, '\\pm')
+                        .replace(/p m/g, '\\pm')
+                        // Ensure common math commands have backslashes if lost
+                        .replace(/(?<!\\)(frac|sqrt|pm|alpha|beta|gamma|theta|pi|sigma|Omega|Delta|sum|int|infty|approx|ne|le|ge)/g, '\\$1');
+                };
+
                 if (useJson) {
                     try { 
                         let cleanText = text.trim();
@@ -1013,13 +1026,21 @@ export default function App() {
                             const match = cleanText.match(/```(?:json)?\s*([\s\S]*?)```/);
                             if (match) cleanText = match[1].trim();
                         }
-                        return JSON.parse(cleanText); 
+                        const parsed = JSON.parse(cleanText);
+                        
+                        // Sanitize all string fields in the JSON
+                        Object.keys(parsed).forEach(key => {
+                            if (typeof parsed[key] === 'string') {
+                                parsed[key] = sanitizeMath(parsed[key]);
+                            }
+                        });
+                        return parsed;
                     } catch(e) { 
                         console.warn("[ZAARS] JSON Parse Failed, falling back to simple chat", e);
-                        return { type: "chat", solution: text }; 
+                        return { type: "chat", solution: sanitizeMath(text) }; 
                     }
                 }
-                return text;
+                return sanitizeMath(text);
             } catch (error) { 
                 retries--; 
                 if (retries === 0) throw error; 
@@ -1210,40 +1231,48 @@ export default function App() {
             const baseInstruction = mode === 'reasoning' 
                 ? `You are ZAARS (Zero-error AI Agent Reasoning System), a specialized Mathematical Reasoning Engine. 
 CRITICAL INSTRUCTIONS for REASONING MODE:
-- **First Principles**: You MUST analyze the problem mathematically from first principles. Do NOT rely on patterns or memorized answers. Solve it perfectly.
-- **Derivation Logic**: Always provide a rigorous, logical step-by-step derivation. Use a methodical, formula-driven approach.
-- **LaTeX Priority**: All mathematical expressions MUST be formatted correctly in LaTeX using double backslashes for commands (e.g., \\\\frac{a}{b}, \\\\sqrt{x}, \\\\text{...}). 
-- **Display Math**: Use $$...$$ for important formulas and steps to ensure they are clear and centered.
-- **Zero-Error**: Your primary goal is absolute accuracy.` 
+- **Structural Layout**: You MUST solve the problem in a highly structured, step-by-step method. Each step must be clearly numbered (e.g., Step 1: ..., Step 2: ...). Avoid long paragraphs.
+- **Python-Driven Logic**: Use the Python Sandbox (provide 'code') to verify every calculation. Your 'thought' section should be based on the logical structure of a program—methodical and sequential.
+- **LaTeX Priority**: Use standard, professional LaTeX for all math. Ensure all symbols (square roots, fractions, exponents) are properly wrapped in $...$ or $$...$$. 
+- **CRITICAL**: Never drop the backslash from commands like \\frac or \\sqrt. Do not use mangled terms like "fracrac".
+- **Zero-Hallucination**: Accuracy is your primary directive.` 
                 : `You are ZAARS, a helpful and direct AI assistant. 
 CRITICAL INSTRUCTIONS for SIMPLE MODE:
 - **Conciseness**: Give very simple, brief, and direct answers. 
-- **No Overthinking**: Do not over-analyze, explain, or provide deep derivations unless the user explicitly requests a long explanation. Be conversational.
-- **Math Formatting**: Use standard LaTeX ($...$ and $$...$$). Use double backslashes for commands.`;
+- **Math Formatting**: Use standard LaTeX. Always ensure backslashes are preserved.`;
 
             let finalResponse;
 
             if (mode === 'reasoning') {
                 // ── AGENTIC SELF-CORRECTION LOOP ────────────────────────────────
-                setCurrentStep('Drafting logical path...');
-                const draftInstruction = `${baseInstruction} Response MUST be JSON with: 'thought' (derivation), 'code' (optional Python to verify), and 'solution'.`;
+                setCurrentStep('Analyzing problem structure...');
+                const draftInstruction = `${baseInstruction} 
+Response MUST be a JSON object with: 
+- 'thought': A draft of the logical steps.
+- 'code': A Python script that calculates the core values and structures the solving steps.
+- 'solution': The final answer.`;
                 const draft = await callGroqAPI(apiHistory, draftInstruction, true);
 
                 // Run Sandbox if code exists
                 let sandboxResult = "";
                 if (draft.code && pyodide) {
-                    setCurrentStep('Executing Sandbox simulation...');
+                    setCurrentStep('Synthesizing steps via Python sandbox...');
                     sandboxResult = await runPython(draft.code);
                 }
 
-                setCurrentStep('Auditing solution for hallucinations...');
+                setCurrentStep('Formatting step-by-step derivation...');
                 const auditHistory = [...apiHistory, 
                     { role: 'assistant', content: JSON.stringify(draft) },
-                    { role: 'user', content: `[SYSTEM AUDITOR]: Review the draft above. ${sandboxResult ? `Python Sandbox Output: ${sandboxResult}.` : ''} Identify any flaws and provide the final, zero-error version.` }
+                    { role: 'user', content: `[SYSTEM AUDITOR]: Review the draft and sandbox results (${sandboxResult}). 
+Create a rigorous, step-by-step layout of the solution. 
+- Use "Step X: [Action Name]" headers.
+- Use bold text for key results.
+- Ensure all LaTeX commands have a leading backslash (e.g., \\frac, \\sqrt).
+- Return ONLY the final JSON.` }
                 ];
                 
                 setCurrentStep('Finalizing verified synthesis...');
-                const modeInstruction = "Your response MUST be a JSON object with strictly these keys: 'type' (set to 'reasoning'), 'thought' (the final verified derivation), 'verification' (how the audit/sandbox confirmed accuracy), and 'solution' (the final correct answer), 'isVerified' (set to true), 'sandboxOutput' (the output of the python execution if any).";
+                const modeInstruction = "Your response MUST be a JSON object with strictly these keys: 'type' (set to 'reasoning'), 'thought' (the final verified step-by-step derivation in markdown), 'verification' (double-check confirmation), 'solution' (the final answer), 'isVerified' (true), 'sandboxOutput' (if any).";
                 finalResponse = await callGroqAPI(auditHistory, `${baseInstruction} ${modeInstruction}`, true);
             } else {
                 const modeInstruction = "Your response MUST be a JSON object with strictly these keys: 'type' (set to 'chat'), and 'solution' (the direct, concise answer).";
@@ -1273,6 +1302,15 @@ CRITICAL INSTRUCTIONS for SIMPLE MODE:
 
     return (
         <div style={{ width: '100vw', height: '100vh', background: '#050505', color: '#fff', fontFamily: "'Inter', sans-serif", overflow: 'hidden', position: 'relative' }}>
+            <style>{`
+                .math-container h3, .math-container h4 { margin-top: 24px; color: #fff; font-weight: 700; letter-spacing: -0.5px; }
+                .math-container p { margin-bottom: 16px; opacity: 0.9; }
+                .math-container strong { color: #fff; }
+                .math-container ul, .math-container ol { margin: 16px 0; padding-left: 20px; }
+                .math-container li { margin-bottom: 12px; }
+                .math-container .katex-display { margin: 20px 0; padding: 10px; background: rgba(255,255,255,0.02); border-radius: 12px; overflow-x: auto; overflow-y: hidden; }
+                .math-container .katex { font-size: 1.1em; }
+            `}</style>
             <DitherBackground />
             <div style={{ position: 'relative', zIndex: 1, width: '100%', height: '100%', display: 'flex' }}>
                 {intelligenceOpen && <IntelligenceDashboard />}
