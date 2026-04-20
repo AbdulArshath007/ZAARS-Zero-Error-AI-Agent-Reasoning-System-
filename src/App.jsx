@@ -1970,5 +1970,6 @@ Produce the final polished response following these strict rules:
         }
       `}</style>
         </div>
+        </div>
     );
 }
