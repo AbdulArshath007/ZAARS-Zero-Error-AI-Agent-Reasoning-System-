@@ -1,5 +1,5 @@
 // ZAARS ENGINE v1.0.4 - UI VISIBILITY UPDATE
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, forwardRef } from 'react';
 import {
     Send,
     Loader2,
@@ -32,13 +32,11 @@ import remarkMath from 'remark-math';
 import rehypeKatex from 'rehype-katex';
 import 'katex/dist/katex.min.css';
 import mammoth from 'mammoth';
+import * as pdfjsLib from 'pdfjs-dist';
 import { Canvas, useFrame, useThree } from '@react-three/fiber';
 import { EffectComposer, wrapEffect } from '@react-three/postprocessing';
 import { Effect } from 'postprocessing';
 import { ResponsiveContainer, LineChart, Line, AreaChart, Area, YAxis, XAxis, Tooltip, BarChart, Bar, Cell } from 'recharts';
-
-import mammoth from 'mammoth';
-import * as pdfjsLib from 'pdfjs-dist';
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = '/pdf.worker.min.mjs';
 
@@ -709,12 +707,11 @@ export default function App() {
         try {
             const apiBase = (window.location.hostname === 'localhost' ? 'http://localhost:5000' : window.location.origin);
             const endpoint = isRegistering ? '/auth/register' : '/auth/login';
-            console.log(`[AUTH] Attempting ${endpoint} at ${apiBase}`);
-            
+
             const res = await fetch(`${apiBase}${endpoint}`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ username: authData.username, password: authData.password })
+                body: JSON.stringify({ username: authData.username.trim(), password: authData.password })
             });
 
             const data = await res.json();
@@ -729,7 +726,6 @@ export default function App() {
             setIsAuthenticated(true);
             syncHistory(data.token);
         } catch (err) {
-            console.error("[AUTH ERROR]", err);
             setAuthError(err.message.includes('Unexpected token') ? 'Server unreachable' : err.message);
         } finally {
             setIsAuthLoading(false);
@@ -740,8 +736,7 @@ export default function App() {
         setIsAuthLoading(true); setAuthError('');
         try {
             const apiBase = (window.location.hostname === 'localhost' ? 'http://localhost:5000' : window.location.origin);
-            console.log(`[AUTH] Attempting Google Auth at ${apiBase}`);
-            
+
             const res = await fetch(`${apiBase}/auth/google`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -760,7 +755,6 @@ export default function App() {
             setIsAuthenticated(true);
             syncHistory(data.token);
         } catch (err) {
-            console.error("[GOOGLE AUTH ERROR]", err);
             setAuthError(err.message);
         } finally {
             setIsAuthLoading(false);
@@ -947,7 +941,6 @@ export default function App() {
                 const hasImage = chatHistory.some(msg => Array.isArray(msg.content) && msg.content.some(part => part.type === 'image_url'));
                 // Use Gemini for vision ALWAYS (due to Groq rotations); otherwise use preference
                 const model = hasImage ? "gemini-2.5-flash" : (preferredModel === 'gemini' ? "gemini-2.5-flash" : "llama-3.3-70b-versatile");
-                console.log(`[ZAARS] Dispatching to Model: ${model} (hasImage: ${hasImage}, preference: ${preferredModel})`);
 
                 // Format messages
                 const messages = [];
@@ -1231,15 +1224,16 @@ export default function App() {
             const baseInstruction = mode === 'reasoning' 
                 ? `You are ZAARS (Zero-error AI Agent Reasoning System), a specialized Mathematical Reasoning Engine. 
 CRITICAL INSTRUCTIONS for REASONING MODE:
-- **Structural Layout**: You MUST solve the problem in a highly structured, step-by-step method. Each step must be clearly numbered (e.g., Step 1: ..., Step 2: ...). Avoid long paragraphs.
-- **Python-Driven Logic**: Use the Python Sandbox (provide 'code') to verify every calculation. Your 'thought' section should be based on the logical structure of a program—methodical and sequential.
-- **LaTeX Priority**: Use standard, professional LaTeX for all math. Ensure all symbols (square roots, fractions, exponents) are properly wrapped in $...$ or $$...$$. 
-- **CRITICAL**: Never drop the backslash from commands like \\frac or \\sqrt. Do not use mangled terms like "fracrac".
-- **Zero-Hallucination**: Accuracy is your primary directive.` 
+- **Structural Layout**: Solve the problem in a highly structured, numbered step-by-step method (Step 1, Step 2, ...). Avoid prose paragraphs — use concise steps.
+- **STRICT LaTeX Rule**: EVERY mathematical expression, formula, variable, operator, equation, and numeric result MUST be written in LaTeX. Use $...$ for inline math and $$...$$ for display/block equations. Examples: $x = 5$, $$\\frac{a}{b} = c$$, $$\\sqrt{x^2 + y^2}$$. Never write raw math without LaTeX delimiters.
+- **LaTeX Commands**: Always include the leading backslash — \\frac, \\sqrt, \\sum, \\int, \\alpha, \\beta, \\pi, \\infty, \\approx, \\leq, \\geq, \\cdot, \\times, \\pm, \\Delta, \\Sigma. Do NOT drop backslashes or mangle commands.
+- **Python-Driven Verification**: Provide a Python 'code' block to verify every calculation numerically. The sandbox result must confirm the final answer.
+- **Zero-Hallucination**: Accuracy is your primary directive. Every step must be mathematically sound.` 
                 : `You are ZAARS, a helpful and direct AI assistant. 
 CRITICAL INSTRUCTIONS for SIMPLE MODE:
-- **Conciseness**: Give very simple, brief, and direct answers. 
-- **Math Formatting**: Use standard LaTeX. Always ensure backslashes are preserved.`;
+- **Conciseness**: Give brief, direct answers. No unnecessary elaboration.
+- **STRICT LaTeX Rule**: ALL mathematical expressions, variables, formulas, and results MUST use LaTeX notation. Use $...$ for inline math (e.g., $x = 5$, $E = mc^2$) and $$...$$ for block equations. Never write raw math without LaTeX.
+- **LaTeX Commands**: Always preserve the backslash — \\frac, \\sqrt, \\sum, \\int, \\pi, \\alpha, \\beta, etc. Do not drop backslashes.`;
 
             let finalResponse;
 
@@ -1247,10 +1241,10 @@ CRITICAL INSTRUCTIONS for SIMPLE MODE:
                 // ── AGENTIC SELF-CORRECTION LOOP ────────────────────────────────
                 setCurrentStep('Analyzing problem structure...');
                 const draftInstruction = `${baseInstruction} 
-Response MUST be a JSON object with: 
-- 'thought': A draft of the logical steps.
-- 'code': A Python script that calculates the core values and structures the solving steps.
-- 'solution': The final answer.`;
+Response MUST be a JSON object with these exact keys:
+- 'thought': Draft the logical steps. ALL math must be in LaTeX ($...$ or $$...$$). Number every step.
+- 'code': A Python script that calculates and verifies the core values.
+- 'solution': The final answer with all math in LaTeX.`;
                 const draft = await callGroqAPI(apiHistory, draftInstruction, true);
 
                 // Run Sandbox if code exists
@@ -1264,18 +1258,19 @@ Response MUST be a JSON object with:
                 const auditHistory = [...apiHistory, 
                     { role: 'assistant', content: JSON.stringify(draft) },
                     { role: 'user', content: `[SYSTEM AUDITOR]: Review the draft and sandbox results (${sandboxResult}). 
-Create a rigorous, step-by-step layout of the solution. 
-- Use "Step X: [Action Name]" headers.
-- Use bold text for key results.
-- Ensure all LaTeX commands have a leading backslash (e.g., \\frac, \\sqrt).
-- Return ONLY the final JSON.` }
+Produce the final polished response following these strict rules:
+- Every step must be numbered: "Step 1: ...", "Step 2: ..."
+- EVERY mathematical expression, variable, formula, operator, and numeric result must be in LaTeX — $...$ for inline or $$...$$ for block equations. No raw math allowed.
+- Do NOT drop backslashes from commands (\\frac, \\sqrt, \\sum, \\int, \\pi, \\alpha, \\leq, \\geq, \\cdot, \\times, \\pm).
+- Use bold for key results and conclusions.
+- Return ONLY the final JSON, no extra text.` }
                 ];
                 
                 setCurrentStep('Finalizing verified synthesis...');
-                const modeInstruction = "Your response MUST be a JSON object with strictly these keys: 'type' (set to 'reasoning'), 'thought' (the final verified step-by-step derivation in markdown), 'verification' (double-check confirmation), 'solution' (the final answer), 'isVerified' (true), 'sandboxOutput' (if any).";
+                const modeInstruction = `Your response MUST be a valid JSON object with strictly these keys: 'type' (set to 'reasoning'), 'thought' (the final verified step-by-step derivation in markdown — ALL math in LaTeX), 'verification' (confirmation that sandbox/audit passed — math in LaTeX), 'solution' (the final answer — ALL math in LaTeX using $$...$$), 'isVerified' (true), 'sandboxOutput' (sandbox output string if any).`;
                 finalResponse = await callGroqAPI(auditHistory, `${baseInstruction} ${modeInstruction}`, true);
             } else {
-                const modeInstruction = "Your response MUST be a JSON object with strictly these keys: 'type' (set to 'chat'), and 'solution' (the direct, concise answer).";
+                const modeInstruction = "Your response MUST be a JSON object with strictly these keys: 'type' (set to 'chat'), and 'solution' (the direct, concise answer — ALL mathematical expressions must be in LaTeX using $...$ for inline and $$...$$ for block formulas).";
                 finalResponse = await callGroqAPI(apiHistory, `${baseInstruction} ${modeInstruction}`, true);
             }
 

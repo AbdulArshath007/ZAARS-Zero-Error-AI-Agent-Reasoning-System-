@@ -1,5 +1,7 @@
 import express from 'express';
 import cors from 'cors';
+import helmet from 'helmet';
+import { rateLimit } from 'express-rate-limit';
 import pg from 'pg';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
@@ -9,10 +11,60 @@ import dotenv from 'dotenv';
 const { Pool } = pg;
 dotenv.config();
 
+// ── Fail-fast: refuse to start without critical secrets ──────────────────────
+if (!process.env.JWT_SECRET) {
+  console.error('[FATAL] JWT_SECRET is not set.');
+  process.exit(1);
+}
+if (!process.env.DATABASE_URL) {
+  console.error('[FATAL] DATABASE_URL is not set.');
+  process.exit(1);
+}
+
+const JWT_SECRET = process.env.JWT_SECRET;
+
+// ── CORS: whitelist production origin only ────────────────────────────────────
+const allowedOrigins = [
+  process.env.ALLOWED_ORIGIN,
+  'http://localhost:5173',
+  'http://localhost:5000'
+].filter(Boolean);
+
+const corsOptions = {
+  origin: (origin, callback) => {
+    if (!origin || allowedOrigins.includes(origin)) return callback(null, true);
+    callback(new Error(`CORS: Origin ${origin} not allowed`));
+  },
+  methods: ['GET', 'POST', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization'],
+  credentials: true
+};
+
 const app = express();
-app.use(cors());
-app.use(express.json({ limit: '50mb' }));
-app.use(express.urlencoded({ limit: '50mb', extended: true }));
+
+// ── Security headers ──────────────────────────────────────────────────────────
+app.use(helmet({ contentSecurityPolicy: false, crossOriginEmbedderPolicy: false }));
+app.use(cors(corsOptions));
+app.options('*', cors(corsOptions));
+app.use(express.json({ limit: '25mb' }));
+app.use(express.urlencoded({ limit: '25mb', extended: true }));
+
+// ── Rate limiters ─────────────────────────────────────────────────────────────
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many requests, please try again later.' }
+});
+
+const aiLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 30,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'AI request limit reached, please slow down.' }
+});
 
 const apiRouter = express.Router();
 app.use('/api', apiRouter);
@@ -58,19 +110,26 @@ const initDB = async () => {
 };
 initDB();
 
-apiRouter.post('/auth/register', async (req, res) => {
+apiRouter.post('/auth/register', authLimiter, async (req, res) => {
   const { username, password } = req.body;
+
   if (!username || !password) return res.status(400).json({ error: 'Missing username or password' });
-  
+  if (typeof username !== 'string' || username.length < 3 || username.length > 50)
+    return res.status(400).json({ error: 'Username must be 3–50 characters' });
+  if (typeof password !== 'string' || password.length < 8)
+    return res.status(400).json({ error: 'Password must be at least 8 characters' });
+  if (!/^[a-zA-Z0-9_]+$/.test(username))
+    return res.status(400).json({ error: 'Username can only contain letters, numbers, and underscores' });
+
   try {
-    const salt = await bcrypt.genSalt(10);
+    const salt = await bcrypt.genSalt(12);
     const hash = await bcrypt.hash(password, salt);
     const result = await pool.query(
       'INSERT INTO users (username, password_hash, provider) VALUES ($1, $2, $3) RETURNING id, username, provider',
-      [username, hash, 'local']
+      [username.trim(), hash, 'local']
     );
     const user = result.rows[0];
-    const token = jwt.sign({ id: user.id, username: user.username }, process.env.JWT_SECRET || 'secret', { expiresIn: '7d' });
+    const token = jwt.sign({ id: user.id, username: user.username }, JWT_SECRET, { expiresIn: '7d' });
     res.json({ token, user: { name: user.username, originalUsername: user.username, isGoogle: false, avatar: user.avatar_url } });
   } catch (err) {
     if (err.code === '23505') {
@@ -80,33 +139,38 @@ apiRouter.post('/auth/register', async (req, res) => {
   }
 });
 
-apiRouter.post('/auth/login', async (req, res) => {
+apiRouter.post('/auth/login', authLimiter, async (req, res) => {
   const { username, password } = req.body;
-  
+
+  if (!username || !password || typeof username !== 'string' || typeof password !== 'string')
+    return res.status(400).json({ error: 'Invalid request' });
+
   try {
-    const result = await pool.query('SELECT * FROM users WHERE (LOWER(username) = LOWER($1) OR LOWER(email) = LOWER($1)) AND provider = $2', [username, 'local']);
+    const result = await pool.query('SELECT * FROM users WHERE (LOWER(username) = LOWER($1) OR LOWER(email) = LOWER($1)) AND provider = $2', [username.trim(), 'local']);
     if (result.rows.length === 0) return res.status(400).json({ error: 'Invalid credentials' });
     
     const user = result.rows[0];
     const isMatch = await bcrypt.compare(password, user.password_hash);
     if (!isMatch) return res.status(400).json({ error: 'Invalid credentials' });
     
-    const token = jwt.sign({ id: user.id, username: user.username }, process.env.JWT_SECRET || 'secret', { expiresIn: '7d' });
+    const token = jwt.sign({ id: user.id, username: user.username }, JWT_SECRET, { expiresIn: '7d' });
     res.json({ token, user: { name: user.username, originalUsername: user.username, email: user.email, isGoogle: false, avatar: user.avatar_url, apiKey: user.api_key } });
   } catch (err) {
     res.status(500).json({ error: 'Server error' });
   }
 });
 
-apiRouter.post('/auth/google', async (req, res) => {
+apiRouter.post('/auth/google', authLimiter, async (req, res) => {
   const { credential } = req.body;
+  if (!credential || typeof credential !== 'string')
+    return res.status(400).json({ error: 'Invalid request' });
   try {
     const ticket = await googleClient.verifyIdToken({
       idToken: credential,
       audience: process.env.GOOGLE_CLIENT_ID,
     });
     const payload = ticket.getPayload();
-    const { email, name, sub: googleId, picture } = payload;
+    const { email, name, picture } = payload;
     
     let result = await pool.query('SELECT * FROM users WHERE LOWER(email) = LOWER($1) AND provider = $2', [email, 'google']);
     let user;
@@ -120,10 +184,10 @@ apiRouter.post('/auth/google', async (req, res) => {
       user = result.rows[0];
     }
     
-    const token = jwt.sign({ id: user.id, email: user.email }, process.env.JWT_SECRET || 'secret', { expiresIn: '7d' });
-    res.json({ token, user: { name: name, email: email, originalUsername: name, isGoogle: true, avatar: user.avatar_url || picture, apiKey: user.api_key } });
+    const token = jwt.sign({ id: user.id, email: user.email }, JWT_SECRET, { expiresIn: '7d' });
+    res.json({ token, user: { name, email, originalUsername: name, isGoogle: true, avatar: user.avatar_url || picture, apiKey: user.api_key } });
   } catch (err) {
-    console.error(err);
+    // Don't expose internal error details to the client
     res.status(400).json({ error: 'Google login failed' });
   }
 });
@@ -132,7 +196,7 @@ const authenticateToken = (req, res, next) => {
   const authHeader = req.headers['authorization'];
   const token = authHeader && authHeader.split(' ')[1];
   if (!token) return res.status(401).json({ error: 'Token required' });
-  jwt.verify(token, process.env.JWT_SECRET || 'secret', (err, user) => {
+  jwt.verify(token, JWT_SECRET, (err, user) => {
     if (err) return res.status(403).json({ error: 'Invalid token' });
     req.user = user;
     next();
@@ -203,8 +267,8 @@ apiRouter.post('/user/update', authenticateToken, async (req, res) => {
   }
 });
 
-// AI Proxy Endpoint
-apiRouter.post('/ai/chat', async (req, res) => {
+// AI Proxy Endpoint — requires valid auth token + rate limit
+apiRouter.post('/ai/chat', authenticateToken, aiLimiter, async (req, res) => {
   const { messages, response_format } = req.body;
   let { model } = req.body;
 
